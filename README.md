@@ -80,78 +80,70 @@ make rpmpkg # build the package in ~/rpmbuild/
 rpm -ivh quadcastrgb-1.0.4-2.x86_64.rpm
 ```
 
-## MacOS
-### Installation
-Download the binary executable for your processor architecture (Intel or ARM):
-- https://ors1mer.xyz/downloads/quadcastrgb-1.0.3_macos_intel
-- https://ors1mer.xyz/downloads/quadcastrgb-1.0.3_macos_arm
+## macOS
 
-Rename the file however you like (`quadcastrgb` in the examples). Open the
-directory (folder) with the file in `Terminal`. Execute this to make the
-file executable and allow it to run on the system (MacOS doesn't trust the
-binary by default; if you do not either - don't use the program):
+### QuadCast 2S GUI App
+
+A native macOS menu bar app for controlling the HyperX QuadCast 2S RGB lighting.
+Requires macOS 26 (Tahoe) and Homebrew.
+
+#### Install dependencies
+```bash
+brew install hidapi pkg-config
+```
+
+#### Build from source
+```bash
+xcodebuild build \
+  -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
+  -scheme QuadcastRGBApp \
+  -configuration Release \
+  -derivedDataPath .build/DerivedData-release
+```
+The built app is at `.build/DerivedData-release/Build/Products/Release/QuadcastRGBApp.app`.
+Copy it to `/Applications` to install.
+
+#### Package as DMG
+For local use (ad-hoc signed, no notarization):
+```bash
+./QuadcastRGBApp/scripts/package-dmg.sh --skip-notarize
+```
+
+For distribution (requires a Developer ID Application certificate):
+```bash
+# One-time: store notarization credentials in Keychain
+xcrun notarytool store-credentials AC_PASSWORD \
+  --apple-id your@email.com --team-id YOUR_TEAM_ID
+
+# Build, sign, create DMG, notarize, and staple
+APPLE_ID=your@email.com ./QuadcastRGBApp/scripts/package-dmg.sh
+```
+
+The script auto-detects your Developer ID certificate, deep-signs with
+hardened runtime and entitlements, creates a compressed DMG with a
+drag-to-Applications layout, submits to Apple for notarization, and
+staples the ticket.
+
+Output: `QuadcastRGBApp.dmg` in the project root.
+
+### CLI (QuadCast S / DuoCast)
+
+Install dependencies:
+```bash
+brew install libusb hidapi pkg-config
+```
+
+Build and install:
+```bash
+make install
+```
+
+Or download a prebuilt binary for your architecture (Intel or ARM) and run:
 ```bash
 chmod 711 quadcastrgb
 xattr -dr com.apple.quarantine quadcastrgb
-```
-Launch the program like this:
-```bash
 ./quadcastrgb solid
 ```
-If you have encountered errors (e.g. `Library not loaded`), you have to install
-the `libusb` dynamic library.
-### Libusb installation
-#### Homebrew
-```bash
-brew install libusb
-ln -s /opt/homebrew/Cellar/libusb/1.0.27/lib/libusb-1.0.0.dylib /usr/local/lib/libusb-1.0.0.dylib
-```
-The second command creates a symlink so that the binary can find the library
-(for some reason, `homebrew` doesn't do it automatically). You'll also need
-superuser rights for the command.
-#### Compilation
-In `Terminal` enter:
-```bash
-curl -OL https://github.com/libusb/libusb/releases/download/v1.0.26/libusb-1.0.26.tar.bz2
-tar xvfj libusb-1.0.26.tar.bz2
-cd libusb-1.0.26
-./configure
-make
-make check
-make install # needs superuser rights
-cd .. && rm -r libusb-1.0.26
-```
-The `make` command might prompt you to install "additional development tools".
-Just agree and re-execute the command as well as the remaining ones.
-### I want quadcastrgb to continue running after I close the terminal
-Just launch the program like this:
-```bash
-open -a /path/to/quadcastrgb --args <program arguments>
-```
-You must enter the absolute path to the executable after the `-a` option. There
-are a bunch of options for how to do this. You may find it in the file
-properties. Or run this while in the program directory in `Terminal`:
-```
-pwd
-```
-You'll get something like `/Users/Bob/Desktop`. Just append `/quadcastrgb`
-(assuming `quadcastrgb` is the name of the file) to the output, and that will
-be the absolute path.
-
-To make the command shorter, create an alias:
-```bash
-alias quadcastrgb="open -a /path/to/quadcastrgb --args "
-```
-To make the alias permanent, run this:
-```bash
-echo "alias quadcastrgb=\"open -a /path/to/quadcastrgb --args\"" >> ~/.zshrc
-```
-Now you can run it from any directory in `Terminal`:
-```
-quadcastrgb <arguments>
-```
-Keep in mind that if you move the program file elsewhere, its absolute path
-changes and you'll have to update the alias.
 
 ## Compiling from source
 If you are lucky, this should be enough:

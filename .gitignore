@@ -9,6 +9,7 @@ hyper.pcap
 /tests/test_qc2s_bridge
 *.o
 *.dSYM/
+*.dmg
 .build/
 
 # Xcode user-specific state
