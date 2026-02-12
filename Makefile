@@ -1,8 +1,18 @@
-OS = linux # should be overridden if necessary
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	OS = macos
+else ifeq ($(UNAME_S),FreeBSD)
+	OS = freebsd
+else
+	OS = linux
+endif
+
 VERSION = 1.0.5
 
-CFLAGS_DEV = -g -Wall -DVERSION="\"$(VERSION)"\" -D DEBUG
-CFLAGS_INS = -s -O2 -DVERSION="\"$(VERSION)"\"
+CFLAGS_DEV = -g -Wall -DVERSION="\"$(VERSION)\"" -D DEBUG
+CFLAGS_INS = -s -O2 -DVERSION="\"$(VERSION)\""
+CPPFLAGS =
+LDFLAGS =
 
 LIBS = -lusb-1.0
 
@@ -31,25 +41,42 @@ endif
 ifeq ($(OS),macos) # pass this info to the source code to disable daemonization
 	CFLAGS_DEV += -D OS_MAC
 	CFLAGS_INS += -D OS_MAC
+	CPPFLAGS += $(shell pkg-config --cflags libusb-1.0 2>/dev/null | sed 's|/libusb-1.0$$||')
+	LDFLAGS += $(shell pkg-config --libs-only-L libusb-1.0 2>/dev/null)
+	HIDAPI_CFLAGS := $(shell pkg-config --cflags hidapi 2>/dev/null | sed 's|/hidapi$$||')
+	HIDAPI_LIBS := $(shell pkg-config --libs hidapi 2>/dev/null)
+	ifneq ($(strip $(HIDAPI_CFLAGS) $(HIDAPI_LIBS)),)
+		CFLAGS_DEV += -DUSE_HIDAPI $(HIDAPI_CFLAGS)
+		CFLAGS_INS += -DUSE_HIDAPI $(HIDAPI_CFLAGS)
+		LIBS += $(HIDAPI_LIBS)
+	endif
 endif
 # END
 
 quadcastrgb: main.c $(OBJMODULES)
-	$(CC) $(CFLAGS_INS) $^ $(LIBS) -o $(BINPATH)
+	$(CC) $(CPPFLAGS) $(CFLAGS_INS) $^ $(LDFLAGS) $(LIBS) -o $(BINPATH)
 
 dev: main.c $(OBJMODULES)
-	$(CC) $(CFLAGS_DEV) $^ $(LIBS) -o $(DEVBINPATH)
+	$(CC) $(CPPFLAGS) $(CFLAGS_DEV) $^ $(LDFLAGS) $(LIBS) -o $(DEVBINPATH)
 
 # For directories
 %/:
 	mkdir -p $@
 # For modules
 %.o: %.c %.h
-ifeq (dev, $(MAKECMDGOALS))
-	$(CC) $(CFLAGS_DEV) -c $< -o $@
+ifeq (quadcastrgb, $(MAKECMDGOALS))
+	$(CC) $(CPPFLAGS) $(CFLAGS_INS) -c $< -o $@
+else ifeq (install, $(MAKECMDGOALS))
+	$(CC) $(CPPFLAGS) $(CFLAGS_INS) -c $< -o $@
+else ifeq (debpkg, $(MAKECMDGOALS))
+	$(CC) $(CPPFLAGS) $(CFLAGS_INS) -c $< -o $@
+else ifeq (rpmpkg, $(MAKECMDGOALS))
+	$(CC) $(CPPFLAGS) $(CFLAGS_INS) -c $< -o $@
 else
-	$(CC) $(CFLAGS_INS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS_DEV) -c $< -o $@
 endif
+
+.PHONY: dev quadcastrgb install debpkg rpmpkg tags clean
 
 install: quadcastrgb $(BINDIR_INS) $(MANDIR_INS)
 	cp $(BINPATH) $(BINDIR_INS)
@@ -76,10 +103,11 @@ ifneq (clean, $(MAKECMDGOALS))
 endif
 
 deps.mk: $(SRCMODULES)
-	$(CC) -MM $^ > $@
+	$(CC) $(CPPFLAGS) -MM $^ > $@
 
 tags:
 	ctags *.c $(SRCMODULES)
 
 clean:
-	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tags deb/$(DEBNAME)
+	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tags \
+		packages/deb/$(DEBNAME) deb/$(DEBNAME)

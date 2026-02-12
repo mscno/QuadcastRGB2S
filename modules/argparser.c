@@ -249,4 +249,3 @@ static int is_color(const char **arg_p, const char **argv_end)
 {
     return (arg_p <= argv_end && (ishexnumber(*arg_p)));
 }
-

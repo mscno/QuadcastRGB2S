@@ -31,6 +31,9 @@
 
 #include <unistd.h> /* for usleep */
 #include <libusb-1.0/libusb.h>
+#ifdef USE_HIDAPI
+#include <hidapi/hidapi.h>
+#endif
 #include <fcntl.h> /* for daemonization */
 #include <signal.h> /* for signal handling */
 #include "locale_macros.h"
@@ -62,6 +65,16 @@
 
 #define INTR_EP_IN 0x82
 #define INTR_LENGTH 8
+#define QC2S_INTR_EP_OUT 0x06
+#define QC2S_INTR_EP_OUT_ALT1 0x04
+#define QC2S_INTR_EP_OUT_ALT2 0x02
+#define QC2S_INTR_EP_IN 0x85
+#define QC2S_INTR_EP_IN_ALT1 0x83
+#define QC2S_INTR_EP_IN_ALT2 0x81
+#define QC2S_ACK_TIMEOUT 100
+#define QC2S_GROUP_COUNT 6
+#define QC2S_UPPER_GROUPS 2
+#define QC2S_RGB_OFFSET 4
 
 #define TIMEOUT 1000 /* one second per packet */
 #define BMREQUEST_TYPE_OUT 0x21
@@ -94,6 +107,7 @@ enum {
 
 /* Functions */
 libusb_device_handle *open_micro(datpack *data_arr);
+void close_micro(libusb_device_handle *handle);
 void send_packets(libusb_device_handle *handle, const datpack *data_arr,
                   int pck_cnt, int verbose);
 #endif

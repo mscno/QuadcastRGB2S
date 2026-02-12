@@ -54,9 +54,19 @@ static int is_micro(libusb_device *dev);
 /* Packet transfer */
 static short send_display_command(byte_t *packet,
                                   libusb_device_handle *handle);
+static short send_qc2s_report(const byte_t *packet,
+                              libusb_device_handle *handle);
+static void qc2s_read_ack(libusb_device_handle *handle);
 static void display_data_arr(libusb_device_handle *handle,
                              const byte_t *colcommand, const byte_t *end);
-#ifndef DEBUG
+static void display_qc2s_data_arr(libusb_device_handle *handle,
+                                  const byte_t *colcommand,
+                                  const byte_t *end);
+static void get_group_colors(const byte_t *colcommand, byte_t *upper,
+                             byte_t *lower);
+static void write_qc2s_color_packet(byte_t group, const byte_t *rgb,
+                                    byte_t *packet);
+#if !defined(DEBUG) && !defined(OS_MAC)
 static void daemonize(int verbose);
 #endif
 #ifdef DEBUG
@@ -65,10 +75,18 @@ static void print_packet(byte_t *pck, char *str);
 
 /* Signal handling */
 volatile static sig_atomic_t nonstop = 0; /* BE CAREFUL: GLOBAL VARIABLE */
-static void nonstop_reset_handler()
+static int qc2s_controller = 0;
+static byte_t qc2s_ep_out = QC2S_INTR_EP_OUT;
+static byte_t qc2s_ep_in = QC2S_INTR_EP_IN;
+static int qc2s_init_sent = 0;
+#ifdef USE_HIDAPI
+static hid_device *qc2s_hid = NULL;
+#endif
+static void nonstop_reset_handler(int s)
 {
     /* No need in saving errno or setting the handler again
      * because the program just frees memory and exits */
+    (void)s;
     nonstop = 0;
 }
 
@@ -78,6 +96,7 @@ libusb_device_handle *open_micro(datpack *data_arr)
     libusb_device **devs;
     libusb_device *micro_dev = NULL;
     libusb_device_handle *handle;
+    struct libusb_device_descriptor descr;
     ssize_t dev_count;
     short errcode;
     errcode = libusb_init(NULL);
@@ -89,6 +108,40 @@ libusb_device_handle *open_micro(datpack *data_arr)
     HANDLE_ERR(dev_count < 0, DEVLIST_ERR_MSG);
     micro_dev = dev_search(devs, dev_count);
     HANDLE_ERR(!micro_dev, NODEV_ERR_MSG);
+    libusb_get_device_descriptor(micro_dev, &descr);
+    qc2s_controller = (descr.idVendor == DEV_VID_EU &&
+                       descr.idProduct == DEV_PID_NA3);
+    qc2s_init_sent = 0;
+#ifdef DEBUG
+    fprintf(stderr, "Selected USB device: %04x:%04x\n",
+            descr.idVendor, descr.idProduct);
+#endif
+
+#ifdef USE_HIDAPI
+    if(qc2s_controller) {
+        struct hid_device_info *hid_devs, *cur;
+        qc2s_hid = NULL;
+        hid_devs = hid_enumerate(DEV_VID_EU, DEV_PID_NA3);
+        for(cur = hid_devs; cur; cur = cur->next) {
+            if(cur->interface_number == 1) {
+#ifdef DEBUG
+                fprintf(stderr, "hidapi: opening interface 1 path=%s\n",
+                        cur->path);
+#endif
+                qc2s_hid = hid_open_path(cur->path);
+                break;
+            }
+        }
+        hid_free_enumeration(hid_devs);
+        if(!qc2s_hid) {
+            fprintf(stderr, "hidapi: couldn't open QC2S interface 1\n");
+            FREE_AND_EXIT();
+        }
+        libusb_free_device_list(devs, 1);
+        return NULL; /* no libusb handle needed for QC2S on macOS */
+    }
+#endif
+
     errcode = libusb_open(micro_dev, &handle);
     if(errcode) {
         fprintf(stderr, "%s\n%s", libusb_strerror(errcode), OPEN_ERR_MSG);
@@ -104,10 +157,23 @@ libusb_device_handle *open_micro(datpack *data_arr)
 
 static int claim_dev_interface(libusb_device_handle *handle)
 {
-    int errcode0, errcode1;
+    int errcode0, errcode1, errcode2;
     libusb_set_auto_detach_kernel_driver(handle, 1); /* might be unsupported */
     errcode0 = libusb_claim_interface(handle, 0);
     errcode1 = libusb_claim_interface(handle, 1);
+    errcode2 = libusb_claim_interface(handle, 2);
+#ifdef DEBUG
+    fprintf(stderr, "claim if0=%d if1=%d if2=%d\n",
+            errcode0, errcode1, errcode2);
+#endif
+    if(errcode0 == LIBUSB_ERROR_ACCESS || errcode1 == LIBUSB_ERROR_ACCESS ||
+       errcode2 == LIBUSB_ERROR_ACCESS) {
+#ifdef DEBUG
+        fprintf(stderr, "claim: ACCESS denied (kernel HID driver), "
+                "continuing anyway\n");
+#endif
+        return 0;
+    }
     if(errcode0 == LIBUSB_ERROR_BUSY || errcode1 == LIBUSB_ERROR_BUSY) {
         fprintf(stderr, BUSY_ERR_MSG);
         return 1;
@@ -116,17 +182,30 @@ static int claim_dev_interface(libusb_device_handle *handle)
         fprintf(stderr, OPEN_ERR_MSG);
         return 1;
     }
+    if(errcode2 == LIBUSB_ERROR_BUSY) {
+        fprintf(stderr, BUSY_ERR_MSG);
+        return 1;
+    } else if(errcode2 == LIBUSB_ERROR_NO_DEVICE) {
+        fprintf(stderr, OPEN_ERR_MSG);
+        return 1;
+    }
     return 0;
 }
 
 static libusb_device *dev_search(libusb_device **devs, ssize_t cnt)
 {
+    libusb_device *fallback = NULL;
     libusb_device **dev;
+    struct libusb_device_descriptor descr;
     for(dev = devs; dev < devs+cnt; dev++) {
-        if(is_micro(*dev))
+        libusb_get_device_descriptor(*dev, &descr);
+        /* QuadCast 2 S has a dedicated HID controller device. Prefer it. */
+        if(descr.idVendor == DEV_VID_EU && descr.idProduct == DEV_PID_NA3)
             return *dev;
+        if(!fallback && is_micro(*dev))
+            fallback = *dev;
     }
-    return NULL;
+    return fallback;
 }
 
 static int is_micro(libusb_device *dev)
@@ -136,7 +215,7 @@ static int is_micro(libusb_device *dev)
     if(descr.idVendor == DEV_VID_NA) {
         if (descr.idProduct == DEV_PID_NA1 ||
             descr.idProduct == DEV_PID_NA2 ||
-            desc.idProduct == DEV_PID_NA3) {
+            descr.idProduct == DEV_PID_NA3) {
               return 1;
         }
     } else if(descr.idVendor == DEV_VID_EU) {
@@ -144,11 +223,30 @@ static int is_micro(libusb_device *dev)
            descr.idProduct == DEV_PID_EU2 ||
            descr.idProduct == DEV_PID_EU3 ||
            descr.idProduct == DEV_PID_EU4 ||
+           descr.idProduct == DEV_PID_NA2 ||
+           descr.idProduct == DEV_PID_NA3 ||
            descr.idProduct == DEV_PID_DUOCAST) {
             return 1;
         }
     }
     return 0;
+}
+
+void close_micro(libusb_device_handle *handle)
+{
+#ifdef USE_HIDAPI
+    if(qc2s_hid) {
+        hid_close(qc2s_hid);
+        qc2s_hid = NULL;
+        hid_exit();
+    }
+#endif
+    if(handle) {
+        libusb_release_interface(handle, 0);
+        libusb_release_interface(handle, 1);
+        libusb_close(handle);
+    }
+    libusb_exit(NULL);
 }
 
 void send_packets(libusb_device_handle *handle, const datpack *data_arr,
@@ -166,11 +264,18 @@ void send_packets(libusb_device_handle *handle, const datpack *data_arr,
     signal(SIGTERM, nonstop_reset_handler);
     /* The loop works until a signal handler resets the variable */
     nonstop = 1; /* set to 1 only here */
-    while(nonstop)
-        display_data_arr(handle, *data_arr, *data_arr+2*BYTE_STEP*command_cnt);
+    while(nonstop) {
+        if(qc2s_controller) {
+            display_qc2s_data_arr(handle, *data_arr,
+                                  *data_arr+2*BYTE_STEP*command_cnt);
+        } else {
+            display_data_arr(handle, *data_arr,
+                             *data_arr+2*BYTE_STEP*command_cnt);
+        }
+    }
 }
 
-#ifndef DEBUG
+#if !defined(DEBUG) && !defined(OS_MAC)
 static void daemonize(int verbose)
 {
     int pid;
@@ -226,6 +331,83 @@ static void display_data_arr(libusb_device_handle *handle,
     free(packet);
 }
 
+static void display_qc2s_data_arr(libusb_device_handle *handle,
+                                  const byte_t *colcommand,
+                                  const byte_t *end)
+{
+    byte_t packet[PACKET_SIZE] = {0};
+    byte_t upper[3], lower[3];
+    short sent;
+    int group;
+
+    if(!qc2s_init_sent) {
+        memset(packet, 0, sizeof(packet));
+        packet[0] = 0x10;
+        packet[1] = 0x01;
+        sent = send_qc2s_report(packet, handle);
+        if(sent != PACKET_SIZE) {
+            nonstop = 0;
+            return;
+        }
+        qc2s_init_sent = 1;
+    }
+
+    while(colcommand < end && nonstop) {
+        get_group_colors(colcommand, upper, lower);
+
+        memset(packet, 0, sizeof(packet));
+        packet[0] = 0x44;
+        packet[1] = 0x01;
+        packet[2] = 0x06;
+        sent = send_qc2s_report(packet, handle);
+        if(sent != PACKET_SIZE) {
+            nonstop = 0; break;
+        }
+
+        for(group = 0; group < QC2S_GROUP_COUNT && nonstop; group++) {
+            const byte_t *rgb = (group < QC2S_UPPER_GROUPS) ? upper : lower;
+            write_qc2s_color_packet((byte_t)group, rgb, packet);
+            sent = send_qc2s_report(packet, handle);
+            if(sent != PACKET_SIZE) {
+                nonstop = 0; break;
+            }
+            usleep(1000*45);
+        }
+        colcommand += 2*BYTE_STEP;
+    }
+}
+
+static void get_group_colors(const byte_t *colcommand, byte_t *upper,
+                             byte_t *lower)
+{
+    if(*colcommand == RGB_CODE) {
+        memcpy(upper, colcommand+1, 3);
+    } else {
+        memset(upper, 0, 3);
+    }
+
+    if(*(colcommand+BYTE_STEP) == RGB_CODE) {
+        memcpy(lower, colcommand+BYTE_STEP+1, 3);
+    } else {
+        memset(lower, 0, 3);
+    }
+}
+
+static void write_qc2s_color_packet(byte_t group, const byte_t *rgb,
+                                    byte_t *packet)
+{
+    int i;
+    memset(packet, 0, PACKET_SIZE);
+    packet[0] = 0x44;
+    packet[1] = 0x02;
+    packet[2] = group;
+    for(i = QC2S_RGB_OFFSET; i+2 < PACKET_SIZE; i += 3) {
+        packet[i] = rgb[0];
+        packet[i+1] = rgb[1];
+        packet[i+2] = rgb[2];
+    }
+}
+
 static short send_display_command(byte_t *packet, libusb_device_handle *handle)
 {
     short sent;
@@ -238,6 +420,141 @@ static short send_display_command(byte_t *packet, libusb_device_handle *handle)
         fprintf(stderr, HEADER_ERR_MSG, libusb_strerror(sent));
     #endif
     return sent;
+}
+
+static short send_qc2s_report(const byte_t *packet, libusb_device_handle *handle)
+{
+    static const byte_t eps[] = {
+        QC2S_INTR_EP_OUT, QC2S_INTR_EP_OUT_ALT1, QC2S_INTR_EP_OUT_ALT2
+    };
+    int errcode = LIBUSB_ERROR_NOT_FOUND, transferred = 0;
+    int i;
+
+#ifdef USE_HIDAPI
+    if(qc2s_hid) {
+        int res;
+        (void)handle;
+        res = hid_write(qc2s_hid, (const unsigned char *)packet, PACKET_SIZE);
+#ifdef DEBUG
+        print_packet((byte_t *)packet, "QC2S report (hidapi):");
+        if(res < 0)
+            fprintf(stderr, "hidapi write error: %ls\n", hid_error(qc2s_hid));
+#endif
+        if(res < 0)
+            return -1;
+        qc2s_read_ack(handle);
+        return PACKET_SIZE;
+    }
+#endif
+
+    for(i = 0; i < (int)(sizeof(eps)/sizeof(eps[0])); i++) {
+        byte_t ep = (i == 0) ? qc2s_ep_out : eps[i];
+        if(i > 0 && ep == qc2s_ep_out)
+            continue;
+        transferred = 0;
+        errcode = libusb_interrupt_transfer(handle, ep, (unsigned char *)packet,
+                                            PACKET_SIZE, &transferred, TIMEOUT);
+#ifdef DEBUG
+        if(errcode)
+            fprintf(stderr, "intr ep 0x%02x err=%d (%s)\n", ep, errcode,
+                    libusb_strerror(errcode));
+#endif
+        if(!errcode && transferred == PACKET_SIZE) {
+            qc2s_ep_out = ep;
+            if(ep == QC2S_INTR_EP_OUT)
+                qc2s_ep_in = QC2S_INTR_EP_IN;
+            else if(ep == QC2S_INTR_EP_OUT_ALT1)
+                qc2s_ep_in = QC2S_INTR_EP_IN_ALT1;
+            else
+                qc2s_ep_in = QC2S_INTR_EP_IN_ALT2;
+            break;
+        }
+    }
+    if(errcode) {
+        int sent;
+        int report_id = packet[0];
+        int report_type_out = 0x02;
+
+        sent = libusb_control_transfer(handle, BMREQUEST_TYPE_OUT,
+                  BREQUEST_OUT, (report_type_out << 8) | report_id, 1,
+                  (unsigned char *)(packet+1), PACKET_SIZE-1, TIMEOUT);
+        if(sent == PACKET_SIZE-1)
+            transferred = PACKET_SIZE;
+        else if(sent >= 0)
+            transferred = sent;
+        else
+            transferred = sent;
+
+        if(transferred < 0) {
+            sent = libusb_control_transfer(handle, BMREQUEST_TYPE_OUT,
+                      BREQUEST_OUT, (report_type_out << 8) | report_id, 1,
+                      (unsigned char *)packet, PACKET_SIZE, TIMEOUT);
+            if(sent == PACKET_SIZE)
+                transferred = PACKET_SIZE;
+            else
+                transferred = sent;
+        }
+        if(transferred < 0) {
+            sent = libusb_control_transfer(handle, BMREQUEST_TYPE_OUT,
+                      BREQUEST_OUT, (report_type_out << 8) | report_id, 0,
+                      (unsigned char *)(packet+1), PACKET_SIZE-1, TIMEOUT);
+            if(sent == PACKET_SIZE-1)
+                transferred = PACKET_SIZE;
+            else
+                transferred = sent;
+        }
+        if(transferred < 0) {
+            sent = libusb_control_transfer(handle, BMREQUEST_TYPE_OUT,
+                      BREQUEST_OUT, WVALUE, WINDEX, (unsigned char *)packet,
+                      PACKET_SIZE, TIMEOUT);
+            transferred = sent;
+        }
+#ifdef DEBUG
+        print_packet((byte_t *)packet, "QC2S report (ctrl):");
+        if(transferred < 0)
+            fprintf(stderr, DATAPCK_ERR_MSG, libusb_strerror(transferred));
+#endif
+        return (short)transferred;
+    }
+#ifdef DEBUG
+    print_packet((byte_t *)packet, "QC2S report (intr):");
+#endif
+    qc2s_read_ack(handle);
+    return (short)transferred;
+}
+
+static void qc2s_read_ack(libusb_device_handle *handle)
+{
+    byte_t ack[PACKET_SIZE] = {0};
+
+#ifdef USE_HIDAPI
+    if(qc2s_hid) {
+        int res;
+        (void)handle;
+        res = hid_read_timeout(qc2s_hid, ack, PACKET_SIZE, QC2S_ACK_TIMEOUT);
+#ifdef DEBUG
+        if(res > 0)
+            print_packet(ack, "QC2S ack (hidapi):");
+        else if(res < 0)
+            fprintf(stderr, "hidapi read error: %ls\n", hid_error(qc2s_hid));
+#endif
+        return;
+    }
+#endif
+
+    {
+        int errcode, transferred = 0;
+        errcode = libusb_interrupt_transfer(handle, qc2s_ep_in, ack,
+                                            PACKET_SIZE, &transferred,
+                                            QC2S_ACK_TIMEOUT);
+#ifdef DEBUG
+        if(!errcode && transferred > 0)
+            print_packet(ack, "QC2S ack:");
+        else if(errcode && errcode != LIBUSB_ERROR_TIMEOUT)
+            fprintf(stderr, "ack ep 0x%02x err=%d (%s)\n", qc2s_ep_in,
+                    errcode, libusb_strerror(errcode));
+#endif
+    }
 }
 
 #ifdef DEBUG
