@@ -1,7 +1,7 @@
-# QuadcastRGB
+# QuadcastRGB2App
 # About
 The program (or driver, if you wish) allows setting the RGB lights of HyperX
-*Quadcast S and Duocast* just like NGenuity does. It is supposed to work on all
+*Quadcast S 2 and Duocast* just like NGenuity does. It is supposed to work on all
 Unix-like systems. The Linux and MacOS versions have been tested and work as
 expected.
 
