@@ -31,13 +31,11 @@
 
 #include <unistd.h> /* for usleep */
 #include <libusb-1.0/libusb.h>
-#ifdef USE_HIDAPI
-#include <hidapi/hidapi.h>
-#endif
 #include <fcntl.h> /* for daemonization */
 #include <signal.h> /* for signal handling */
 #include "locale_macros.h"
 #include "rgbmodes.h" /* for datpack & byte_t types, count_color_pairs, defs */
+#include "qc2s_protocol.h"
 
 /* Constants */
 /* Vendor IDs */
@@ -65,22 +63,6 @@
 
 #define INTR_EP_IN 0x82
 #define INTR_LENGTH 8
-
-/* QC2S protocol constants */
-#define QC2S_INTR_EP_OUT 0x06
-#define QC2S_INTR_EP_OUT_ALT1 0x04
-#define QC2S_INTR_EP_OUT_ALT2 0x02
-#define QC2S_INTR_EP_IN 0x85
-#define QC2S_INTR_EP_IN_ALT1 0x83
-#define QC2S_INTR_EP_IN_ALT2 0x81
-#define QC2S_ACK_TIMEOUT 100
-#define QC2S_GROUP_COUNT 6
-#define QC2S_UPPER_GROUPS 2
-#define QC2S_RGB_OFFSET 4
-#define QC2S_CMD_INIT 0x10
-#define QC2S_CMD_COLOR 0x44
-#define QC2S_SUB_START 0x01
-#define QC2S_SUB_DATA 0x02
 
 #define TIMEOUT 1000 /* one second per packet */
 #define BMREQUEST_TYPE_OUT 0x21

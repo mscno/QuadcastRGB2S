@@ -24,10 +24,13 @@
  * 51 Franklin Street, Fifth Floor Boston, MA 02110 USA. 
  */
 #include "devio.h"
+#ifdef USE_HIDAPI
+#include "qc2s_bridge.h"
+#endif
 
 /* For open_micro */
 #define FREE_AND_EXIT() \
-    libusb_free_device_list(devs, 1); \
+    if(devs) libusb_free_device_list(devs, 1); \
     free(data_arr); \
     libusb_exit(NULL); \
     exit(libusberr)
@@ -70,7 +73,7 @@ static byte_t qc2s_ep_out = QC2S_INTR_EP_OUT;
 static byte_t qc2s_ep_in = QC2S_INTR_EP_IN;
 static int qc2s_init_sent = 0;
 #ifdef USE_HIDAPI
-static hid_device *qc2s_hid = NULL;
+static qc2s_ctx *qc2s_bridge_ctx = NULL;
 #endif
 static void nonstop_reset_handler(int s)
 {
@@ -83,7 +86,7 @@ static void nonstop_reset_handler(int s)
 /* Functions */
 libusb_device_handle *open_micro(datpack *data_arr)
 {
-    libusb_device **devs;
+    libusb_device **devs = NULL;
     libusb_device *micro_dev = NULL;
     libusb_device_handle *handle;
     struct libusb_device_descriptor descr;
@@ -109,22 +112,8 @@ libusb_device_handle *open_micro(datpack *data_arr)
 
 #ifdef USE_HIDAPI
     if(qc2s_controller) {
-        struct hid_device_info *hid_devs, *cur;
-        qc2s_hid = NULL;
-        hid_init();
-        hid_devs = hid_enumerate(DEV_VID_EU, DEV_PID_NA3);
-        for(cur = hid_devs; cur; cur = cur->next) {
-            if(cur->interface_number == 1) {
-#ifdef DEBUG
-                fprintf(stderr, "hidapi: opening interface 1 path=%s\n",
-                        cur->path);
-#endif
-                qc2s_hid = hid_open_path(cur->path);
-                break;
-            }
-        }
-        hid_free_enumeration(hid_devs);
-        if(!qc2s_hid) {
+        qc2s_bridge_ctx = qc2s_open();
+        if(!qc2s_bridge_ctx) {
             fprintf(stderr, "hidapi: couldn't open QC2S interface 1\n");
             FREE_AND_EXIT();
         }
@@ -218,10 +207,9 @@ static int is_micro(libusb_device *dev)
 void close_micro(libusb_device_handle *handle)
 {
 #ifdef USE_HIDAPI
-    if(qc2s_hid) {
-        hid_close(qc2s_hid);
-        qc2s_hid = NULL;
-        hid_exit();
+    if(qc2s_bridge_ctx) {
+        qc2s_close(qc2s_bridge_ctx);
+        qc2s_bridge_ctx = NULL;
     }
 #endif
     if(handle) {
@@ -416,18 +404,13 @@ static short send_qc2s_report(const byte_t *packet, libusb_device_handle *handle
     int i;
 
 #ifdef USE_HIDAPI
-    if(qc2s_hid) {
-        int res;
+    if(qc2s_bridge_ctx) {
         (void)handle;
-        res = hid_write(qc2s_hid, packet, PACKET_SIZE);
+        if(qc2s_send_report(qc2s_bridge_ctx, packet, 1) < 0)
+            return -1;
 #ifdef DEBUG
         print_packet(packet, "QC2S report (hidapi):");
-        if(res < 0)
-            fprintf(stderr, "hidapi write error: %ls\n", hid_error(qc2s_hid));
 #endif
-        if(res < 0)
-            return -1;
-        qc2s_read_ack(handle);
         return PACKET_SIZE;
     }
 #endif
@@ -471,16 +454,8 @@ static void qc2s_read_ack(libusb_device_handle *handle)
     byte_t ack[PACKET_SIZE] = {0};
 
 #ifdef USE_HIDAPI
-    if(qc2s_hid) {
-        int res;
+    if(qc2s_bridge_ctx) {
         (void)handle;
-        res = hid_read_timeout(qc2s_hid, ack, PACKET_SIZE, QC2S_ACK_TIMEOUT);
-#ifdef DEBUG
-        if(res > 0)
-            print_packet(ack, "QC2S ack (hidapi):");
-        else if(res < 0)
-            fprintf(stderr, "hidapi read error: %ls\n", hid_error(qc2s_hid));
-#endif
         return;
     }
 #endif

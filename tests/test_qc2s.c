@@ -8,15 +8,10 @@
 
 /* Pull in the types we need */
 #include "../modules/rgbmodes.h"
+#include "../modules/qc2s_protocol.h"
 
-/* Re-declare constants from devio.h that we need (avoid pulling libusb) */
-#define PACKET_SIZE 64
-#define QC2S_RGB_OFFSET 4
-#define QC2S_CMD_COLOR 0x44
-#define QC2S_SUB_DATA 0x02
-#define QC2S_GROUP_COUNT 6
-#define QC2S_UPPER_GROUPS 2
-#define RGB_CODE_VAL 0x81
+/* Keep test independent from libusb-heavy headers */
+#define PACKET_SIZE QC2S_PACKET_SIZE
 
 static int tests_run = 0;
 static int tests_failed = 0;

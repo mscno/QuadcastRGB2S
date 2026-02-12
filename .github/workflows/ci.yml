@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-cli-linux:
+    name: Core/CLI (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libusb-1.0-0-dev pkg-config
+
+      - name: Build dev binary
+        run: |
+          make clean
+          make dev
+
+      - name: Run unit tests
+        run: make test
+
+      - name: CLI smoke test
+        run: ./dev --help >/dev/null
+
+  core-cli-macos:
+    name: Core/CLI (macOS)
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install libusb hidapi pkg-config
+
+      - name: Build dev binary
+        run: |
+          make clean
+          make dev
+
+      - name: Run unit tests
+        run: make test
+
+      - name: CLI smoke test
+        run: ./dev --help >/dev/null
+
+  app-macos:
+    name: App (macOS)
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install hidapi pkg-config
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Build and test app target
+        run: |
+          xcodebuild test \
+            -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
+            -scheme QuadcastRGBApp \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData-test \
+            -skip-testing:QuadcastRGBAppUITests \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
+            DEVELOPMENT_TEAM=
+
+      - name: Release build
+        run: |
+          xcodebuild build \
+            -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
+            -scheme QuadcastRGBApp \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData-release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
+            DEVELOPMENT_TEAM=

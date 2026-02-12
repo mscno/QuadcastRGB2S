@@ -1,3 +1,18 @@
 temp/
 
 deps.mk # auto created by Makefile
+hyper.pcap
+
+# Build artifacts
+/dev
+/tests/test_qc2s
+*.o
+*.dSYM/
+.build/
+
+# Xcode user-specific state
+*.xcuserstate
+xcuserdata/
+
+# OS noise
+.DS_Store
