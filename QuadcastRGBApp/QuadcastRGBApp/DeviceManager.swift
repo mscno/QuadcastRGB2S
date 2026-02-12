@@ -11,6 +11,7 @@ final class DeviceManager: ObservableObject {
     @Published var delay: Int = 10
     @Published var brightness: Int = 100
     @Published var connected: Bool = false
+    @Published var needsInputMonitoring: Bool = false
 
     var primaryColor: Color {
         (colors.first ?? .black).color
@@ -22,6 +23,7 @@ final class DeviceManager: ObservableObject {
     private var workerThread: Thread?
     private var running = false
     private var settingsSubscription: AnyCancellable?
+    private var consecutiveFailures = 0
 
     private init() {
         generator = FrameGenerator(mode: .solid, colors: [RGB(r: 255, g: 0, b: 0)], speed: 50, delay: 10, brightness: 100)
@@ -56,7 +58,14 @@ final class DeviceManager: ObservableObject {
 
     func reconnect() {
         stop()
+        needsInputMonitoring = false
         start()
+    }
+
+    func openInputMonitoringSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - Private
@@ -104,15 +113,28 @@ final class DeviceManager: ObservableObject {
                     continue
                 }
             } else {
+                // Check TCC before attempting open
+                let tccGranted = qc2s_tcc_listen_access_allowed() != 0
+                if !tccGranted {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.needsInputMonitoring = true
+                    }
+                    Thread.sleep(forTimeInterval: 3.0)
+                    continue
+                }
+
                 let newCtx = qc2s_open()
                 if let c = newCtx {
                     lock.lock()
                     ctx = c
                     lock.unlock()
+                    consecutiveFailures = 0
                     DispatchQueue.main.async { [weak self] in
                         self?.connected = true
+                        self?.needsInputMonitoring = false
                     }
                 } else {
+                    consecutiveFailures += 1
                     Thread.sleep(forTimeInterval: 2.0)
                 }
                 continue

@@ -80,6 +80,9 @@ private struct DetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if dm.needsInputMonitoring {
+                    permissionBanner
+                }
                 previewBar
                 colorSection
                 if !dm.colors.isEmpty {
@@ -118,6 +121,32 @@ private struct DetailView: View {
         .onChange(of: brightness) { _, val in dm.brightness = Int(val) }
         .onChange(of: speed) { _, val in dm.speed = Int(val) }
         .onChange(of: delay) { _, val in dm.delay = Int(val) }
+    }
+
+    // MARK: - Permission Banner
+
+    private var permissionBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Input Monitoring Required", systemImage: "exclamationmark.shield")
+                .font(.headline)
+            Text("QuadCast RGB needs Input Monitoring permission to communicate with your microphone. Grant access in System Settings, then click Reconnect.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Button("Open System Settings") {
+                    dm.openInputMonitoringSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Reconnect") {
+                    dm.reconnect()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.orange.opacity(0.3)))
     }
 
     private func syncFromModel() {

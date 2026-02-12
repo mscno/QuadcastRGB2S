@@ -4,6 +4,7 @@ import ServiceManagement
 @main
 struct QuadcastRGBApp: App {
     @StateObject private var deviceManager = DeviceManager.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra {
@@ -17,8 +18,12 @@ struct QuadcastRGBApp: App {
         Window("QuadCast RGB", id: "settings") {
             SettingsWindowContent()
                 .environmentObject(deviceManager)
+                .onAppear {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
         }
         .defaultSize(width: 680, height: 580)
+        .defaultLaunchBehavior(.presented)
     }
 }
 
