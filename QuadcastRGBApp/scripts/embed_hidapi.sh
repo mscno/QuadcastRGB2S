@@ -39,24 +39,35 @@ if [ -e "${DEST_LIB}" ]; then
 fi
 cp -f "${HIDAPI_LIB}" "${DEST_LIB}"
 
+# Homebrew dylibs may already carry an ad-hoc signature. Remove it before
+# mutating load commands to avoid signature invalidation warnings.
+if /usr/bin/codesign -dv "${DEST_LIB}" >/dev/null 2>&1; then
+    /usr/bin/codesign --remove-signature "${DEST_LIB}" >/dev/null 2>&1 || true
+fi
+
 # Make the embedded dylib discoverable via @rpath.
-install_name_tool -id @rpath/libhidapi.0.dylib "${DEST_LIB}"
+/usr/bin/install_name_tool -id @rpath/libhidapi.0.dylib "${DEST_LIB}"
 
 BINARY="${BUILT_PRODUCTS_DIR}/${EXECUTABLE_PATH}"
-OLD_NAME="$(otool -L "${BINARY}" | awk '/libhidapi/ {print $1; exit}')"
+OLD_NAME="$(/usr/bin/otool -L "${BINARY}" | awk '/libhidapi/ {print $1; exit}')"
 if [ -n "${OLD_NAME}" ]; then
-    install_name_tool -change "${OLD_NAME}" @rpath/libhidapi.0.dylib "${BINARY}"
+    /usr/bin/install_name_tool -change "${OLD_NAME}" @rpath/libhidapi.0.dylib "${BINARY}"
 fi
 
 DEBUG_DYLIB="${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/${PRODUCT_NAME}.debug.dylib"
 if [ -f "${DEBUG_DYLIB}" ]; then
-    OLD_DEBUG_NAME="$(otool -L "${DEBUG_DYLIB}" | awk '/libhidapi/ {print $1; exit}')"
+    OLD_DEBUG_NAME="$(/usr/bin/otool -L "${DEBUG_DYLIB}" | awk '/libhidapi/ {print $1; exit}')"
     if [ -n "${OLD_DEBUG_NAME}" ]; then
-        install_name_tool -change "${OLD_DEBUG_NAME}" @rpath/libhidapi.0.dylib "${DEBUG_DYLIB}"
+        /usr/bin/install_name_tool -change "${OLD_DEBUG_NAME}" @rpath/libhidapi.0.dylib "${DEBUG_DYLIB}"
     fi
 fi
 
-# In CI we disable code signing. Only sign when signing is enabled and an identity exists.
-if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
-    codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" "${DEST_LIB}"
+# In CI we disable code signing. Locally sign with the resolved identity,
+# otherwise fall back to ad-hoc for unsigned debug runs.
+if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ]; then
+    if [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+        /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" "${DEST_LIB}"
+    else
+        /usr/bin/codesign --force --sign - "${DEST_LIB}"
+    fi
 fi

@@ -3,6 +3,7 @@
  * Thread-safe per context, no exit().
  */
 #include "qc2s_bridge.h"
+#include "qc2s_tcc_macos.h"
 #include <hidapi/hidapi.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -13,6 +14,12 @@
 #define QC2S_VID       0x03f0
 #define QC2S_PID       0x02b5
 #define QC2S_INTERFACE 1
+#define QC2S_USAGE_PAGE_PRIMARY         0xff13
+#define QC2S_USAGE_PRIMARY              0xff00
+#define QC2S_USAGE_PAGE_GENERIC_DESKTOP 0x0001
+#define QC2S_USAGE_POINTER              0x0001
+#define QC2S_USAGE_MOUSE                0x0002
+#define QC2S_PATH_LIST_CAP              16
 
 #define INTER_GROUP_MS 45
 
@@ -87,6 +94,15 @@ static int send_report_locked(qc2s_ctx *ctx, const uint8_t *packet, int expect_a
     return 0;
 }
 
+static int hid_listen_access_allowed(void)
+{
+#ifdef __APPLE__
+    return qc2s_tcc_listen_access_allowed();
+#else
+    return 1;
+#endif
+}
+
 static int send_init_locked(qc2s_ctx *ctx)
 {
     uint8_t pkt[QC2S_PACKET_SIZE];
@@ -117,12 +133,86 @@ static void build_color_packet(uint8_t group, uint8_t r, uint8_t g, uint8_t b,
     }
 }
 
+static int path_in_list(const char *path, const char **paths, size_t count)
+{
+    size_t i;
+
+    if (!path)
+        return 0;
+
+    for (i = 0; i < count; i++) {
+        if (strcmp(path, paths[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void add_path_if_missing(const char *path, const char **paths,
+                                size_t *count)
+{
+    if (!path || !count || *count >= QC2S_PATH_LIST_CAP)
+        return;
+    if (path_in_list(path, paths, *count))
+        return;
+    paths[*count] = path;
+    (*count)++;
+}
+
+static int is_tcc_guarded_usage(const struct hid_device_info *dev)
+{
+    return dev &&
+           dev->usage_page == QC2S_USAGE_PAGE_GENERIC_DESKTOP &&
+           (dev->usage == QC2S_USAGE_POINTER || dev->usage == QC2S_USAGE_MOUSE);
+}
+
+static int is_vendor_usage(const struct hid_device_info *dev)
+{
+    return dev && dev->usage_page >= 0xff00;
+}
+
+static int matches_pass(int pass, const struct hid_device_info *dev)
+{
+    if (!dev)
+        return 0;
+
+    switch (pass) {
+    case 0:
+        return dev->interface_number == QC2S_INTERFACE &&
+               dev->usage_page == QC2S_USAGE_PAGE_PRIMARY &&
+               dev->usage == QC2S_USAGE_PRIMARY;
+    case 1:
+        return dev->interface_number == QC2S_INTERFACE &&
+               dev->usage_page == QC2S_USAGE_PAGE_PRIMARY;
+    case 2:
+        return dev->interface_number == QC2S_INTERFACE &&
+               is_vendor_usage(dev);
+    case 3:
+        return is_vendor_usage(dev);
+    case 4:
+        return dev->interface_number == QC2S_INTERFACE &&
+               !is_tcc_guarded_usage(dev);
+    case 5:
+        return !is_tcc_guarded_usage(dev);
+    default:
+        return dev->usage_page == QC2S_USAGE_PAGE_PRIMARY &&
+               dev->usage == QC2S_USAGE_PRIMARY;
+    }
+}
+
 /* ---- public API ---- */
 qc2s_ctx *qc2s_open(void)
 {
     struct hid_device_info *devs, *cur;
+    const char *attempted_paths[QC2S_PATH_LIST_CAP] = {0};
+    size_t attempted_count = 0;
     hid_device *dev = NULL;
     qc2s_ctx *ctx;
+    int pass;
+
+    if (!hid_listen_access_allowed()) {
+        QC2S_LOG("[qc2s] Input Monitoring (ListenEvent) not granted\n");
+        return NULL;
+    }
 
     if (hid_system_acquire() != 0) {
         QC2S_LOG("[qc2s] hid_init failed\n");
@@ -135,11 +225,23 @@ qc2s_ctx *qc2s_open(void)
         return NULL;
     }
 
-    for (cur = devs; cur; cur = cur->next) {
-        if (cur->interface_number == QC2S_INTERFACE) {
+    for (pass = 0; pass < 6 && !dev; pass++) {
+        for (cur = devs; cur; cur = cur->next) {
+            if (!cur->path)
+                continue;
+            if (!matches_pass(pass, cur))
+                continue;
+            if (path_in_list(cur->path, attempted_paths, attempted_count))
+                continue;
+
+            add_path_if_missing(cur->path, attempted_paths, &attempted_count);
             dev = hid_open_path(cur->path);
-            if (dev)
+            if (dev) {
+                QC2S_LOG("[qc2s] opened HID path %s (iface=%d usage=0x%04hx:0x%04hx)\n",
+                         cur->path, cur->interface_number, cur->usage_page,
+                         cur->usage);
                 break;
+            }
         }
     }
     hid_free_enumeration(devs);

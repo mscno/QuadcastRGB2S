@@ -6,6 +6,7 @@ hyper.pcap
 # Build artifacts
 /dev
 /tests/test_qc2s
+/tests/test_qc2s_bridge
 *.o
 *.dSYM/
 .build/

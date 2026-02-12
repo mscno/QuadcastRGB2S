@@ -46,11 +46,11 @@ ifeq ($(OS),macos) # pass this info to the source code to disable daemonization
 	HIDAPI_CFLAGS := $(shell pkg-config --cflags hidapi 2>/dev/null | sed 's|/hidapi$$||')
 	HIDAPI_LIBS := $(shell pkg-config --libs hidapi 2>/dev/null)
 	ifneq ($(strip $(HIDAPI_CFLAGS) $(HIDAPI_LIBS)),)
-		SRCMODULES += modules/qc2s_bridge.c
+		SRCMODULES += modules/qc2s_bridge.c modules/qc2s_tcc_macos.c
 		CPPFLAGS += $(HIDAPI_CFLAGS)
 		CFLAGS_DEV += -DUSE_HIDAPI $(HIDAPI_CFLAGS)
 		CFLAGS_INS += -DUSE_HIDAPI $(HIDAPI_CFLAGS)
-		LIBS += $(HIDAPI_LIBS)
+		LIBS += $(HIDAPI_LIBS) -framework IOKit
 	endif
 endif
 # END
@@ -111,7 +111,8 @@ test: tests/test_qc2s.c tests/test_qc2s_bridge.c
 	$(CC) $(CPPFLAGS) -g -Wall -D DEBUG tests/test_qc2s.c -o tests/test_qc2s
 	$(CC) $(CPPFLAGS) -g -Wall -D DEBUG -DQC2S_BRIDGE_DISABLE_SLEEP \
 		-Itests/mock_hidapi tests/test_qc2s_bridge.c modules/qc2s_bridge.c \
-		tests/mock_hidapi/mock_hidapi.c -pthread -o tests/test_qc2s_bridge
+		tests/mock_hidapi/mock_hidapi.c tests/mock_hidapi/mock_qc2s_tcc.c \
+		-pthread -o tests/test_qc2s_bridge
 	./tests/test_qc2s
 	./tests/test_qc2s_bridge
 

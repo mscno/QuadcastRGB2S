@@ -44,4 +44,26 @@ enum LightingMode: String, CaseIterable, Codable {
     var label: String { rawValue.capitalized }
     var hasSpeed: Bool { self != .solid }
     var hasDelay: Bool { self == .blink }
+
+    var icon: String {
+        switch self {
+        case .solid: return "circle.fill"
+        case .blink: return "light.max"
+        case .cycle: return "arrow.triangle.2.circlepath"
+        case .wave: return "water.waves"
+        case .lightning: return "bolt.fill"
+        case .pulse: return "waveform.path"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .solid: return "Steady single color"
+        case .blink: return "Flash between colors"
+        case .cycle: return "Smooth color transitions"
+        case .wave: return "Offset upper and lower zones"
+        case .lightning: return "Random flash effects"
+        case .pulse: return "Synchronized breathing"
+        }
+    }
 }

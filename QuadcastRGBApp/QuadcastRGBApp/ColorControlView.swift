@@ -15,148 +15,259 @@ private let presetColors: [RGB] = [
     RGB(r: 255, g: 128, b: 128),   // Salmon
 ]
 
+// MARK: - Settings Window
+
 struct SettingsWindowContent: View {
-    @EnvironmentObject var deviceManager: DeviceManager
+    @EnvironmentObject var dm: DeviceManager
+    @State private var selectedMode: LightingMode?
+
+    var body: some View {
+        NavigationSplitView {
+            List(LightingMode.allCases, id: \.self, selection: $selectedMode) { mode in
+                ModeRow(mode: mode, isActive: dm.mode == mode, tint: dm.primaryColor)
+                    .tag(mode)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            DetailView()
+        }
+        .frame(minWidth: 660, minHeight: 560)
+        .onAppear { selectedMode = dm.mode }
+        .onChange(of: selectedMode) { _, newMode in
+            if let m = newMode { dm.mode = m }
+        }
+    }
+}
+
+// MARK: - Sidebar Mode Row
+
+private struct ModeRow: View {
+    let mode: LightingMode
+    let isActive: Bool
+    let tint: Color
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mode.label)
+                Text(mode.description)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } icon: {
+            Image(systemName: mode.icon)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isActive ? tint : .secondary)
+                .frame(width: 20)
+        }
+    }
+}
+
+// MARK: - Detail View
+
+private struct DetailView: View {
+    @EnvironmentObject var dm: DeviceManager
+    @State private var brightness: Double = 100
+    @State private var speed: Double = 50
+    @State private var delay: Double = 10
 
     private var maxColors: Int {
-        deviceManager.mode == .solid ? 1 : 10
+        dm.mode == .solid ? 1 : 10
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            connectionStatus
-            modeSection
-            colorSection
-            animationSection
-
-            if !deviceManager.connected {
-                Button("Reconnect") {
-                    deviceManager.reconnect()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                previewBar
+                colorSection
+                if !dm.colors.isEmpty {
+                    selectedColors
                 }
-                .controlSize(.small)
+                animationSection
             }
+            .padding(24)
+            .frame(maxWidth: 500)
         }
-        .padding(20)
-        .frame(width: 360)
-        .background(.ultraThinMaterial)
-    }
-
-    // MARK: - Connection Status
-
-    private var connectionStatus: some View {
-        HStack {
-            Spacer()
-            Circle()
-                .fill(deviceManager.connected ? .green : .red)
-                .frame(width: 8, height: 8)
-            Text(deviceManager.connected ? "Connected" : "Disconnected")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Mode
-
-    private var modeSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("MODE")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Picker("", selection: $deviceManager.mode) {
-                ForEach(LightingMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
+        .frame(maxWidth: .infinity)
+        .navigationTitle(dm.mode.label)
+        .navigationSubtitle(dm.mode.description)
+        .toolbar {
+            ToolbarItem(placement: .status) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(dm.connected ? Color.green : Color.red)
+                        .frame(width: 7, height: 7)
+                    Text(dm.connected ? "Connected" : "Disconnected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            ToolbarItem(placement: .primaryAction) {
+                if !dm.connected {
+                    Button("Reconnect", systemImage: "arrow.clockwise") {
+                        dm.reconnect()
+                    }
+                }
+            }
+        }
+        .animation(.smooth, value: dm.mode)
+        .onAppear { syncFromModel() }
+        .onChange(of: dm.mode) { _, _ in syncFromModel() }
+        .onChange(of: brightness) { _, val in dm.brightness = Int(val) }
+        .onChange(of: speed) { _, val in dm.speed = Int(val) }
+        .onChange(of: delay) { _, val in dm.delay = Int(val) }
+    }
+
+    private func syncFromModel() {
+        brightness = Double(dm.brightness)
+        speed = Double(dm.speed)
+        delay = Double(dm.delay)
+    }
+
+    // MARK: - Preview
+
+    private var previewBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Preview")
+                .font(.headline)
+
+            RoundedRectangle(cornerRadius: 10)
+                .fill(LinearGradient(
+                    colors: dm.colors.isEmpty
+                        ? [Color.black]
+                        : dm.colors.map { $0.scaled(brightness: dm.brightness).color },
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ))
+                .frame(height: 48)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(.primary.opacity(0.08))
+                )
+                .shadow(
+                    color: (dm.colors.first?.color ?? .clear).opacity(0.25),
+                    radius: 16, y: 6
+                )
         }
     }
 
     // MARK: - Colors
 
     private var colorSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("COLORS")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 6), count: 6), spacing: 6) {
-                ForEach(presetColors, id: \.self) { preset in
-                    swatchButton(preset)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Colors")
+                    .font(.headline)
+                Spacer()
+                Button("Custom Color...") {
+                    openColorPanel()
                 }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(Color.accentColor)
             }
 
-            Button("Custom Color...") {
-                openColorPanel()
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(Color.accentColor)
-
-            if !deviceManager.colors.isEmpty {
-                selectedColors
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(40), spacing: 8), count: 6),
+                spacing: 8
+            ) {
+                ForEach(presetColors, id: \.self) { preset in
+                    ColorSwatch(
+                        color: preset,
+                        isSelected: dm.colors.contains(preset),
+                        action: { addOrSetColor(preset) }
+                    )
+                }
             }
         }
     }
 
     private var selectedColors: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Selected")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 4) {
-                ForEach(Array(deviceManager.colors.enumerated()), id: \.offset) { index, c in
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(c.color)
-                        .frame(width: 20, height: 20)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(.primary.opacity(0.2), lineWidth: 1)
-                        )
-                        .onTapGesture {
-                            if deviceManager.colors.count > 1 {
-                                deviceManager.colors.remove(at: index)
-                            }
-                        }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 Spacer()
-                if deviceManager.colors.count > 1 {
+                if dm.colors.count > 1 {
                     Button("Clear") {
-                        if let first = deviceManager.colors.first {
-                            deviceManager.colors = [first]
+                        if let first = dm.colors.first {
+                            dm.colors = [first]
                         }
                     }
                     .buttonStyle(.plain)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 6) {
+                ForEach(Array(dm.colors.enumerated()), id: \.offset) { index, c in
+                    Circle()
+                        .fill(c.color)
+                        .frame(width: 24, height: 24)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.15)))
+                        .onTapGesture {
+                            if dm.colors.count > 1 {
+                                dm.colors.remove(at: index)
+                            }
+                        }
                 }
             }
         }
     }
 
-    private func swatchButton(_ preset: RGB) -> some View {
-        let isSelected = deviceManager.colors.contains(preset)
-        return RoundedRectangle(cornerRadius: 6)
-            .fill(preset.color)
-            .frame(width: 36, height: 28)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: isSelected ? 2 : 1)
-            )
-            .onTapGesture {
-                addOrSetColor(preset)
+    // MARK: - Animation Controls
+
+    private var animationSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Controls")
+                .font(.headline)
+
+            sliderRow(label: "Brightness", icon: "sun.max", value: $brightness)
+
+            if dm.mode.hasSpeed {
+                sliderRow(label: "Speed", icon: "hare", value: $speed)
             }
+
+            if dm.mode.hasDelay {
+                sliderRow(label: "Delay", icon: "clock", value: $delay)
+            }
+        }
     }
+
+    private func sliderRow(
+        label: String,
+        icon: String,
+        value: Binding<Double>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Label(label, systemImage: icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Slider(value: value, in: 0...100, step: 1)
+            Text("\(Int(value.wrappedValue))")
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .trailing)
+        }
+    }
+
+    // MARK: - Color Management
 
     private func addOrSetColor(_ c: RGB) {
         if maxColors == 1 {
-            deviceManager.colors = [c]
-        } else if deviceManager.colors.contains(c) {
-            if deviceManager.colors.count > 1 {
-                deviceManager.colors.removeAll { $0 == c }
+            dm.colors = [c]
+        } else if dm.colors.contains(c) {
+            if dm.colors.count > 1 {
+                dm.colors.removeAll { $0 == c }
             }
-        } else if deviceManager.colors.count < maxColors {
-            deviceManager.colors.append(c)
+        } else if dm.colors.count < maxColors {
+            dm.colors.append(c)
         }
     }
 
@@ -186,48 +297,32 @@ struct SettingsWindowContent: View {
         panel.orderFront(nil)
         objc_setAssociatedObject(panel, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
     }
+}
 
-    // MARK: - Animation
+// MARK: - Color Swatch
 
-    private var animationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ANIMATION")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+private struct ColorSwatch: View {
+    let color: RGB
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
 
-            if deviceManager.mode.hasSpeed {
-                sliderRow(label: "Speed", value: Binding(
-                    get: { Double(deviceManager.speed) },
-                    set: { deviceManager.speed = Int($0) }
-                ), range: 0...100)
-            }
-
-            sliderRow(label: "Brightness", value: Binding(
-                get: { Double(deviceManager.brightness) },
-                set: { deviceManager.brightness = Int($0) }
-            ), range: 0...100)
-
-            if deviceManager.mode.hasDelay {
-                sliderRow(label: "Delay", value: Binding(
-                    get: { Double(deviceManager.delay) },
-                    set: { deviceManager.delay = Int($0) }
-                ), range: 0...100)
-            }
-        }
-    }
-
-    private func sliderRow(label: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 65, alignment: .leading)
-            Slider(value: value, in: range, step: 1)
-            Text("\(Int(value.wrappedValue))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 28, alignment: .trailing)
-        }
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(color.color)
+            .frame(width: 40, height: 32)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(
+                        isSelected ? Color.accentColor : Color.primary.opacity(0.1),
+                        lineWidth: isSelected ? 2.5 : 1
+                    )
+            )
+            .shadow(color: isSelected ? color.color.opacity(0.4) : .clear, radius: 6)
+            .scaleEffect(isHovered ? 1.06 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovered)
+            .onHover { isHovered = $0 }
+            .onTapGesture(perform: action)
     }
 }
 

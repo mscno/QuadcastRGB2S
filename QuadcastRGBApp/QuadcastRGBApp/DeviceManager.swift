@@ -5,21 +5,11 @@ import Combine
 final class DeviceManager: ObservableObject {
     static let shared = DeviceManager()
 
-    @Published var mode: LightingMode = .solid {
-        didSet { onSettingsChanged() }
-    }
-    @Published var colors: [RGB] = [RGB(r: 255, g: 0, b: 0)] {
-        didSet { onSettingsChanged() }
-    }
-    @Published var speed: Int = 50 {
-        didSet { onSettingsChanged() }
-    }
-    @Published var delay: Int = 10 {
-        didSet { onSettingsChanged() }
-    }
-    @Published var brightness: Int = 100 {
-        didSet { onSettingsChanged() }
-    }
+    @Published var mode: LightingMode = .solid
+    @Published var colors: [RGB] = [RGB(r: 255, g: 0, b: 0)]
+    @Published var speed: Int = 50
+    @Published var delay: Int = 10
+    @Published var brightness: Int = 100
     @Published var connected: Bool = false
 
     var primaryColor: Color {
@@ -31,11 +21,13 @@ final class DeviceManager: ObservableObject {
     private let generator: FrameGenerator
     private var workerThread: Thread?
     private var running = false
+    private var settingsSubscription: AnyCancellable?
 
     private init() {
         generator = FrameGenerator(mode: .solid, colors: [RGB(r: 255, g: 0, b: 0)], speed: 50, delay: 10, brightness: 100)
         loadSettings()
         generator.regenerate(mode: mode, colors: colors, speed: speed, delay: delay, brightness: brightness)
+        observeSettings()
         start()
     }
 
@@ -57,7 +49,9 @@ final class DeviceManager: ObservableObject {
         lock.lock()
         if let c = ctx { qc2s_close(c); ctx = nil }
         lock.unlock()
-        connected = false
+        Task { @MainActor in
+            self.connected = false
+        }
     }
 
     func reconnect() {
@@ -66,6 +60,20 @@ final class DeviceManager: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func observeSettings() {
+        settingsSubscription = Publishers.MergeMany(
+            $mode.map { _ in () }.eraseToAnyPublisher(),
+            $colors.map { _ in () }.eraseToAnyPublisher(),
+            $speed.map { _ in () }.eraseToAnyPublisher(),
+            $delay.map { _ in () }.eraseToAnyPublisher(),
+            $brightness.map { _ in () }.eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in
+            self?.onSettingsChanged()
+        }
+    }
 
     private func onSettingsChanged() {
         generator.regenerate(mode: mode, colors: colors, speed: speed, delay: delay, brightness: brightness)

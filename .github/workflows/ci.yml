@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -71,6 +74,13 @@ jobs:
       - name: Show Xcode
         run: xcodebuild -version
 
+      - name: Verify macOS 26 SDK is available
+        run: |
+          xcodebuild -showsdks | grep -q "macOS 26" || {
+            echo "macOS 26 SDK is required for this project."
+            exit 1
+          }
+
       - name: Build and test app target
         run: |
           xcodebuild test \
@@ -79,11 +89,8 @@ jobs:
             -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath .build/DerivedData-test \
-            -skip-testing:QuadcastRGBAppUITests \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY= \
-            DEVELOPMENT_TEAM=
+            -only-testing QuadcastRGBAppTests \
+            CODE_SIGN_IDENTITY=-
 
       - name: Release build
         run: |
@@ -93,7 +100,4 @@ jobs:
             -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath .build/DerivedData-release \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY= \
-            DEVELOPMENT_TEAM=
+            CODE_SIGN_IDENTITY=-
