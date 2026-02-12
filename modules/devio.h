@@ -65,6 +65,8 @@
 
 #define INTR_EP_IN 0x82
 #define INTR_LENGTH 8
+
+/* QC2S protocol constants */
 #define QC2S_INTR_EP_OUT 0x06
 #define QC2S_INTR_EP_OUT_ALT1 0x04
 #define QC2S_INTR_EP_OUT_ALT2 0x02
@@ -75,6 +77,10 @@
 #define QC2S_GROUP_COUNT 6
 #define QC2S_UPPER_GROUPS 2
 #define QC2S_RGB_OFFSET 4
+#define QC2S_CMD_INIT 0x10
+#define QC2S_CMD_COLOR 0x44
+#define QC2S_SUB_START 0x01
+#define QC2S_SUB_DATA 0x02
 
 #define TIMEOUT 1000 /* one second per packet */
 #define BMREQUEST_TYPE_OUT 0x21

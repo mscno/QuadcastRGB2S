@@ -76,7 +76,7 @@ else
 	$(CC) $(CPPFLAGS) $(CFLAGS_DEV) -c $< -o $@
 endif
 
-.PHONY: dev quadcastrgb install debpkg rpmpkg tags clean
+.PHONY: dev quadcastrgb install debpkg rpmpkg tags clean test
 
 install: quadcastrgb $(BINDIR_INS) $(MANDIR_INS)
 	cp $(BINPATH) $(BINDIR_INS)
@@ -105,9 +105,13 @@ endif
 deps.mk: $(SRCMODULES)
 	$(CC) $(CPPFLAGS) -MM $^ > $@
 
+test: tests/test_qc2s.c
+	$(CC) $(CPPFLAGS) -g -Wall -D DEBUG tests/test_qc2s.c -o tests/test_qc2s
+	./tests/test_qc2s
+
 tags:
 	ctags *.c $(SRCMODULES)
 
 clean:
-	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tags \
+	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tests/test_qc2s tags \
 		packages/deb/$(DEBNAME) deb/$(DEBNAME)
