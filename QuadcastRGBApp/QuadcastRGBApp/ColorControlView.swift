@@ -1,5 +1,4 @@
 import SwiftUI
-import ServiceManagement
 
 private let presetColors: [RGB] = [
     RGB(r: 255, g: 0, b: 0),       // Red
@@ -16,56 +15,53 @@ private let presetColors: [RGB] = [
     RGB(r: 255, g: 128, b: 128),   // Salmon
 ]
 
-struct ColorControlView: View {
+struct SettingsWindowContent: View {
     @EnvironmentObject var deviceManager: DeviceManager
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     private var maxColors: Int {
         deviceManager.mode == .solid ? 1 : 10
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            header
-            Divider()
-            modePicker
-            Divider()
+        VStack(spacing: 16) {
+            connectionStatus
+            modeSection
             colorSection
-            Divider()
-            sliders
-            Divider()
-            footer
+            animationSection
+
+            if !deviceManager.connected {
+                Button("Reconnect") {
+                    deviceManager.reconnect()
+                }
+                .controlSize(.small)
+            }
         }
-        .padding(12)
-        .frame(width: 280)
+        .padding(20)
+        .frame(width: 360)
+        .background(.ultraThinMaterial)
     }
 
-    // MARK: - Header
+    // MARK: - Connection Status
 
-    private var header: some View {
+    private var connectionStatus: some View {
         HStack {
+            Spacer()
             Circle()
                 .fill(deviceManager.connected ? .green : .red)
                 .frame(width: 8, height: 8)
             Text(deviceManager.connected ? "Connected" : "Disconnected")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer()
-            Button("Quit") {
-                deviceManager.stop()
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Mode Picker
+    // MARK: - Mode
 
-    private var modePicker: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Mode").font(.caption).foregroundStyle(.secondary)
+    private var modeSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("MODE")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Picker("", selection: $deviceManager.mode) {
                 ForEach(LightingMode.allCases, id: \.self) { mode in
                     Text(mode.label).tag(mode)
@@ -80,16 +76,16 @@ struct ColorControlView: View {
 
     private var colorSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Colors").font(.caption).foregroundStyle(.secondary)
+            Text("COLORS")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            // Preset swatch grid
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 6), count: 6), spacing: 6) {
                 ForEach(presetColors, id: \.self) { preset in
                     swatchButton(preset)
                 }
             }
 
-            // Custom color button
             Button("Custom Color...") {
                 openColorPanel()
             }
@@ -97,37 +93,42 @@ struct ColorControlView: View {
             .font(.caption)
             .foregroundStyle(Color.accentColor)
 
-            // Selected colors
             if !deviceManager.colors.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Selected").font(.caption2).foregroundStyle(.secondary)
-                    HStack(spacing: 4) {
-                        ForEach(Array(deviceManager.colors.enumerated()), id: \.offset) { index, c in
+                selectedColors
+            }
+        }
+    }
+
+    private var selectedColors: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Selected")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                ForEach(Array(deviceManager.colors.enumerated()), id: \.offset) { index, c in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(c.color)
+                        .frame(width: 20, height: 20)
+                        .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(c.color)
-                                .frame(width: 20, height: 20)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .strokeBorder(.primary.opacity(0.2), lineWidth: 1)
-                                )
-                                .onTapGesture {
-                                    if deviceManager.colors.count > 1 {
-                                        deviceManager.colors.remove(at: index)
-                                    }
-                                }
-                        }
-                        Spacer()
-                    }
-                    if deviceManager.colors.count > 1 {
-                        Button("Clear All") {
-                            if let first = deviceManager.colors.first {
-                                deviceManager.colors = [first]
+                                .strokeBorder(.primary.opacity(0.2), lineWidth: 1)
+                        )
+                        .onTapGesture {
+                            if deviceManager.colors.count > 1 {
+                                deviceManager.colors.remove(at: index)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if deviceManager.colors.count > 1 {
+                    Button("Clear") {
+                        if let first = deviceManager.colors.first {
+                            deviceManager.colors = [first]
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
@@ -167,7 +168,6 @@ struct ColorControlView: View {
         panel.mode = .wheel
         panel.isContinuous = false
 
-        // Use a one-shot observer for when the panel closes
         let handler = ColorPanelHandler { nsColor in
             let c = nsColor.usingColorSpace(.sRGB) ?? nsColor
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -184,14 +184,17 @@ struct ColorControlView: View {
         panel.setTarget(handler)
         panel.setAction(#selector(ColorPanelHandler.colorChanged(_:)))
         panel.orderFront(nil)
-        // Keep handler alive
         objc_setAssociatedObject(panel, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
     }
 
-    // MARK: - Sliders
+    // MARK: - Animation
 
-    private var sliders: some View {
-        VStack(spacing: 8) {
+    private var animationSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ANIMATION")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             if deviceManager.mode.hasSpeed {
                 sliderRow(label: "Speed", value: Binding(
                     get: { Double(deviceManager.speed) },
@@ -224,33 +227,6 @@ struct ColorControlView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, alignment: .trailing)
-        }
-    }
-
-    // MARK: - Footer
-
-    private var footer: some View {
-        VStack(spacing: 8) {
-            Toggle("Start at Login", isOn: $launchAtLogin)
-                .font(.caption)
-                .onChange(of: launchAtLogin) { _, newValue in
-                    do {
-                        if newValue {
-                            try SMAppService.mainApp.register()
-                        } else {
-                            try SMAppService.mainApp.unregister()
-                        }
-                    } catch {
-                        launchAtLogin = SMAppService.mainApp.status == .enabled
-                    }
-                }
-
-            if !deviceManager.connected {
-                Button("Reconnect") {
-                    deviceManager.reconnect()
-                }
-                .font(.caption)
-            }
         }
     }
 }
