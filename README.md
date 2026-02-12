@@ -87,6 +87,8 @@ rpm -ivh quadcastrgb-1.0.4-2.x86_64.rpm
 A native macOS menu bar app for controlling the HyperX QuadCast 2S RGB lighting.
 Requires macOS 26 (Tahoe) and Homebrew.
 
+![QuadCast RGB Settings](docs/screenshot.png)
+
 #### Install dependencies
 ```bash
 brew install hidapi pkg-config
