@@ -72,6 +72,10 @@ jobs:
             -derivedDataPath .build/DerivedData-test \
             -resultBundlePath dist/ci/UITests.xcresult \
             -only-testing:QuadcastRGBAppUITests CODE_SIGN_IDENTITY=-
+      - name: Reject UI runtime warnings
+        run: |
+          xcrun xcresulttool get test-results summary --path dist/ci/UITests.xcresult --compact > dist/ci/ui-summary.json
+          python3 -c 'import json; report=json.load(open("dist/ci/ui-summary.json")); warnings=report.get("runtimeWarnings", []); print(warnings); raise SystemExit(bool(warnings))'
       - name: Verify self-contained release app and DMG
         run: bash QuadcastRGBApp/scripts/package-dmg.sh --skip-notarize
       - name: Upload preview DMG

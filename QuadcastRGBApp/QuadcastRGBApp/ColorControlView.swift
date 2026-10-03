@@ -17,12 +17,11 @@ private let presetColors: [(name: String, rgb: RGB)] = [
 
 struct SettingsWindowContent: View {
     @EnvironmentObject var dm: DeviceManager
+    @State private var selectedMode: LightingMode?
 
     var body: some View {
         NavigationSplitView {
-            List(LightingMode.allCases, id: \.self, selection: Binding<LightingMode?>(
-                get: { dm.mode }, set: { if let mode = $0 { dm.mode = mode } }
-            )) { mode in
+            List(LightingMode.allCases, id: \.self, selection: $selectedMode) { mode in
                 Label {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(mode.label)
@@ -45,6 +44,16 @@ struct SettingsWindowContent: View {
             DetailView()
         }
         .frame(minWidth: 700, minHeight: 620)
+        .onAppear { selectedMode = dm.mode }
+        .onChange(of: dm.mode) { _, mode in selectedMode = mode }
+        .onChange(of: selectedMode) { _, mode in
+            guard let mode, mode != dm.mode else { return }
+            // List may change selection during its own update. Publish after it.
+            Task { @MainActor in
+                guard selectedMode == mode else { return }
+                dm.mode = mode
+            }
+        }
     }
 }
 
