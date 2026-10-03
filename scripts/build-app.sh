@@ -20,6 +20,7 @@ if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
     SIGN_ARGS+=(--options runtime --timestamp)
     if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then SIGN_ARGS+=(--keychain "$SIGNING_KEYCHAIN"); fi
 fi
+bash scripts/sign-sparkle.sh "$APP"
 codesign "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/libhidapi.0.dylib"
 codesign "${SIGN_ARGS[@]}" --entitlements QuadcastRGBApp/QuadcastRGBApp/QuadcastRGBApp.entitlements "$APP"
 codesign --verify --deep --strict "$APP"

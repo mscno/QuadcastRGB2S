@@ -10,5 +10,13 @@
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
 	<true/>
+
+    <key>SUFeedURL</key><string>https://github.com/mscno/QuadcastRGB2S/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>6DrgWm6bTUO11iLyyqCen7+gSn92SSvqWemTxmQW4tw=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUSendProfileInfo</key><false/>
+    <key>SUVerifyUpdateBeforeExtraction</key><true/>
+    <key>SURequireSignedFeed</key><true/>
 </dict>
 </plist>

@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import Combine
 
 @main
 struct QuadcastRGBApp: App {
@@ -71,6 +72,7 @@ private func menuBarIcon(ledColor: Color) -> NSImage {
 struct MenuBarMenu: View {
     @EnvironmentObject var deviceManager: DeviceManager
     @Environment(\.openWindow) private var openWindow
+    @StateObject private var updates = UpdateService.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -111,6 +113,11 @@ struct MenuBarMenu: View {
 
         Divider()
 
+        Button("Check for Updates…") { updates.checkNow() }.disabled(!updates.canCheck)
+        Toggle("Check for Updates Automatically", isOn: $updates.automaticChecks)
+        Toggle("Automatically Install Updates", isOn: $updates.automaticInstall).disabled(!updates.automaticChecks)
+        Divider()
+
         Button("Quit") {
             deviceManager.stop()
             NSApplication.shared.terminate(nil)
@@ -120,6 +127,17 @@ struct MenuBarMenu: View {
 
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var audioUpdates: AnyCancellable?
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UpdateService.shared.isCapturing = { AudioManager.shared.recording || AudioManager.shared.playing }
+        UpdateService.shared.start()
+        audioUpdates = AudioManager.shared.$recording.combineLatest(AudioManager.shared.$playing).sink { recording, playing in
+            if !recording && !playing {
+                // Published emits before AudioManager has stored its new values.
+                Task { @MainActor in UpdateService.shared.resumeInstallationIfReady() }
+            }
+        }
+    }
     func applicationWillTerminate(_ notification: Notification) {
         DeviceManager.shared.stop()
         AudioManager.shared.shutdown()

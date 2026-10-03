@@ -8,7 +8,7 @@ let package = Package(
     products: [.library(name: "QuadcastCore", targets: ["QuadcastCore"])],
     targets: [
         .target(name: "QuadcastCore", path: "QuadcastRGBApp/QuadcastRGBApp",
-                exclude: ["Assets.xcassets", "BridgingHeader.h", "ColorControlView.swift", "AudioControlView.swift", "AudioManager.swift", "DeviceManager.swift", "Info.plist", "QuadcastRGBApp.entitlements", "QuadcastRGBAppApp.swift"],
+                exclude: ["Assets.xcassets", "BridgingHeader.h", "ColorControlView.swift", "AudioControlView.swift", "AudioManager.swift", "AppUpdates.swift", "DeviceManager.swift", "Info.plist", "QuadcastRGBApp.entitlements", "QuadcastRGBAppApp.swift"],
                 sources: ["LightingMode.swift", "FrameGenerator.swift", "DeviceWorker.swift", "AudioControls.swift", "AudioSamples.swift", "MicrophoneEvents.swift"]),
         .testTarget(name: "QuadcastCoreTests", dependencies: ["QuadcastCore"],
                     path: "QuadcastRGBApp/QuadcastRGBAppTests")

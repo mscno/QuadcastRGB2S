@@ -24,6 +24,10 @@ class BundleTests(unittest.TestCase):
         (self.contents / "MacOS/QuadcastRGBApp").write_bytes(b"fixture")
         self.info = dict(CFBundleIdentifier="com.mscno.QuadcastRGBApp", CFBundleShortVersionString="1.0.0",
                          LSUIElement=True, LSMinimumSystemVersion="26.0", CFBundleExecutable="QuadcastRGBApp", NSMicrophoneUsageDescription="Opt-in microphone test")
+        self.info.update(SUFeedURL="https://github.com/mscno/QuadcastRGB2S/releases/latest/download/appcast.xml", SUPublicEDKey="6DrgWm6bTUO11iLyyqCen7+gSn92SSvqWemTxmQW4tw=", SURequireSignedFeed=True, SUVerifyUpdateBeforeExtraction=True)
+        sparkle = self.contents/"Frameworks/Sparkle.framework/Versions/B/Sparkle"
+        sparkle.parent.mkdir(parents=True)
+        sparkle.write_bytes(b"fixture")
         self.write_info()
         self.arch = "arm64"
         self.dependency = "@rpath/libhidapi.0.dylib"
@@ -86,4 +90,21 @@ class BundleTests(unittest.TestCase):
     def test_missing_audio_input_entitlement_is_rejected(self):
         self.entitlements = {}
         with self.assertRaisesRegex(ValueError, "audio input entitlement"):
+            self.verify()
+
+    def test_missing_sparkle_is_rejected(self):
+        (self.contents/"Frameworks/Sparkle.framework/Versions/B/Sparkle").unlink()
+        with self.assertRaisesRegex(ValueError, "Missing embedded Sparkle"):
+            self.verify()
+
+    def test_unsigned_feed_is_rejected(self):
+        self.info["SURequireSignedFeed"] = False
+        self.write_info()
+        with self.assertRaisesRegex(ValueError, "Unsigned updater"):
+            self.verify()
+
+    def test_untrusted_feed_url_is_rejected(self):
+        self.info["SUFeedURL"] = "https://example.invalid/update.xml"
+        self.write_info()
+        with self.assertRaisesRegex(ValueError, "Invalid update feed"):
             self.verify()

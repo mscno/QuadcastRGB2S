@@ -114,3 +114,9 @@ not covered by this repository's CI.
 Based on [Ors1mer/QuadcastRGB](https://github.com/Ors1mer/QuadcastRGB) and
 [j-muell/QuadcastRGB2S](https://github.com/j-muell/QuadcastRGB2S).
 Licensed under [GPL-2.0-only](LICENSE).
+
+## Updates
+
+Direct-download builds use Sparkle 2.10.0. Automatic update checks are enabled by default and use a signed feed on GitHub Releases, with no system-profile reporting. Use **Check for Updates…** or enable **Automatically install updates** in settings (the QuadCast menu bar menu). Automatic installation is opt-in. Update archives and feeds are signed with a separate Ed25519 key, and release apps/DMGs remain Paraply-signed, Apple-notarized and stapled.
+
+The first Sparkle-enabled version must be installed manually. Subsequent stable releases publish `appcast.xml` alongside their DMG; previews and drafts do not enter the latest stable feed. Capture diagnostics and UI tests disable network update checks.

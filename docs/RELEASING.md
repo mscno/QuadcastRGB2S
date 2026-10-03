@@ -124,3 +124,11 @@ The tag is `v<version>-beta.1`, and release notes state that the app is not
 Developer ID signed/notarized and may be blocked by Gatekeeper. Bump the app
 version before creating another development prerelease. Publishing is an
 explicit manual action; normal pushes only build preview artifacts.
+
+## Sparkle updates
+
+The direct-download app embeds Sparkle 2.10.0, including its signed installer helpers. `scripts/sign-sparkle.sh` signs each nested component before the framework and app. Keep Library Validation enabled.
+
+Set `SPARKLE_PRIVATE_KEY` in GitHub Actions secrets to the base64-encoded 32-byte Ed25519 seed matching `SUPublicEDKey`. Keep a secure backup outside Git. For local signing set `SPARKLE_KEY_FILE` to a protected file containing that value. Existing Apple signing/notarization secrets are unchanged.
+
+After notarization and stapling, `scripts/generate-appcast.py` signs the final DMG and feed with Sparkle's pinned tools, verifies both signatures, and adds the feed checksum. Draft releases include `appcast.xml`. Publish the matching DMG and feed together as a stable release; the app uses GitHub's latest stable release asset URL. Never edit a signed feed after signing or overwrite a published DMG. Bump both the marketing version and build number for every update.
