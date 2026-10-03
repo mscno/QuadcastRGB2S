@@ -6,7 +6,8 @@ notarization/stapling. The embedded hidapi library is signed before the app, and
 both use the same identity. Library validation stays enabled. Homebrew is a
 build dependency only.
 
-CI runs on pushes to **master** and pull requests. **Release signed DMG** is
+CI runs on pushes to **master** and pull requests and uploads an ad-hoc preview DMG.
+This project distributes DMGs on GitHub; there is no App Store submission workflow. **Release signed DMG** is
 manually dispatched on master. It produces a downloadable artifact by default;
 `create_draft_release=true` also prepares a draft GitHub release. Publishing a
 draft remains a separate review step. No ordinary push publishes a release or
@@ -74,7 +75,8 @@ Set these repository secrets in `mscno/QuadcastRGB2S`:
 | `NOTARY_KEY_ID` | API key ID |
 | `NOTARY_ISSUER_ID` | API issuer UUID |
 
-These match Shotglass's secret names. Secret values cannot be read back from
+These match Shotglass's secret names. The App Store Connect API key is used only
+for Apple notarization (Gatekeeper), not App Store distribution. Secret values cannot be read back from
 GitHub; provision them from the original signing assets or organization secrets.
 The runner imports them into a temporary keychain, masks its random password,
 and deletes the keychain and key files even on failure. Only the verified DMG,

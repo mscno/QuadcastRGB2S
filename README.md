@@ -58,7 +58,9 @@ xcodebuild test -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
 Animation and worker tests run without a microphone. UI tests use an isolated
 preview state and never change microphone lighting or saved settings. CI checks
 the CLI on Linux/macOS and the app on macOS 26, including UI screenshot attachments
-and a self-contained release-bundle/DMG check.
+and a self-contained release-bundle/DMG check. Each successful CI run uploads
+a development DMG named `QuadcastRGB2S-AppleSilicon-preview`; signed distribution
+is prepared by the separate release workflow.
 
 ## CLI
 

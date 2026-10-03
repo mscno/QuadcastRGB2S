@@ -74,6 +74,14 @@ jobs:
             -only-testing:QuadcastRGBAppUITests CODE_SIGN_IDENTITY=-
       - name: Verify self-contained release app and DMG
         run: bash QuadcastRGBApp/scripts/package-dmg.sh --skip-notarize
+      - name: Upload preview DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuadcastRGB2S-AppleSilicon-preview
+          path: dist/preview/QuadcastRGB2S-preview.dmg
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
       - name: Save UI screenshots and test results
         if: always()
         uses: actions/upload-artifact@v7
