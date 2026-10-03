@@ -1,41 +1,29 @@
-//
-//  QuadcastRGBAppUITests.swift
-//  QuadcastRGBAppUITests
-//
-//  Created by Mads Schou-Andreasen on 12/02/2026.
-//
-
 import XCTest
 
 final class QuadcastRGBAppUITests: XCTestCase {
-
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
-        continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+    override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testModesExposeAppropriateControlsAndAccessibleColors() {
         let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
         app.launch()
-
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
-
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.sliders["slider-Brightness"].exists)
+        XCTAssertFalse(app.sliders["slider-Speed"].exists)
+        XCTAssertTrue(app.buttons["color-Blue"].exists)
+        app.buttons["color-Blue"].click()
+        XCTAssertEqual(app.buttons["color-Blue"].value as? String, "Selected")
+        app.staticTexts["Blink"].click()
+        XCTAssertTrue(app.sliders["slider-Speed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sliders["slider-Delay"].exists)
+        app.staticTexts["Wave"].click()
+        XCTAssertTrue(app.sliders["slider-Speed"].exists)
+        XCTAssertFalse(app.sliders["slider-Delay"].exists)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "Liquid Glass – Wave"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

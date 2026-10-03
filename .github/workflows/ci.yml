@@ -1,103 +1,84 @@
 name: CI
-
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
-  core-cli-linux:
-    name: Core/CLI (Linux)
-    runs-on: ubuntu-latest
+  core-cli:
+    name: Core/CLI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libusb-1.0-0-dev pkg-config
-
-      - name: Build dev binary
-        run: |
-          make clean
-          make dev
-
-      - name: Run unit tests
-        run: make test
-
-      - name: CLI smoke test
-        run: ./dev --help >/dev/null
-
-  core-cli-macos:
-    name: Core/CLI (macOS)
-    runs-on: macos-latest
-    env:
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev pkg-config
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
         run: brew install libusb hidapi pkg-config
-
-      - name: Build dev binary
+      - name: Build and smoke test CLI
         run: |
           make clean
           make dev
-
-      - name: Run unit tests
-        run: make test
-
-      - name: CLI smoke test
-        run: ./dev --help >/dev/null
-
+          ./dev --help >/dev/null
+          make clean
+          make quadcastrgb
+          ./quadcastrgb --help >/dev/null
+      - name: C protocol and lifecycle tests with sanitizers
+        run: make test-sanitize
+      - name: Release script regression tests
+        run: python3 -m unittest discover -s tests/release -v
   app-macos:
-    name: App (macOS)
-    runs-on: macos-latest
-    env:
-      HOMEBREW_NO_AUTO_UPDATE: "1"
+    name: App (macOS 26, Apple Silicon)
+    runs-on: macos-26
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: brew install hidapi pkg-config
-
-      - name: Show Xcode
-        run: xcodebuild -version
-
-      - name: Verify macOS 26 SDK is available
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install build dependencies
         run: |
-          xcodebuild -showsdks | grep -q "macOS 26" || {
-            echo "macOS 26 SDK is required for this project."
-            exit 1
-          }
-
-      - name: Build and test app target
+          brew install hidapi pkg-config
+          python3 -m pip install 'dmgbuild==1.6.7'
+      - name: Require supported SDK and architecture
         run: |
-          xcodebuild test \
-            -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
-            -scheme QuadcastRGBApp \
-            -configuration Debug \
-            -destination 'platform=macOS' \
+          xcodebuild -version
+          [[ "$(uname -m)" == arm64 ]]
+          xcodebuild -showsdks | grep -Eq 'macOS (26|27)'
+          python3 scripts/version.py
+      - name: Swift animation and device-worker tests
+        run: swift test --arch arm64
+      - name: Build app and run UI regressions
+        run: |
+          mkdir -p dist/ci
+          xcodebuild test -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
+            -scheme QuadcastRGBApp -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData-test \
-            -only-testing QuadcastRGBAppTests \
-            CODE_SIGN_IDENTITY=-
-
-      - name: Release build
-        run: |
-          xcodebuild build \
-            -project QuadcastRGBApp/QuadcastRGBApp.xcodeproj \
-            -scheme QuadcastRGBApp \
-            -configuration Release \
-            -destination 'platform=macOS' \
-            -derivedDataPath .build/DerivedData-release \
-            CODE_SIGN_IDENTITY=-
+            -resultBundlePath dist/ci/UITests.xcresult \
+            -only-testing:QuadcastRGBAppUITests CODE_SIGN_IDENTITY=-
+      - name: Verify self-contained release app and DMG
+        run: bash QuadcastRGBApp/scripts/package-dmg.sh --skip-notarize
+      - name: Save UI screenshots and test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macOS-UI-test-results
+          path: dist/ci/UITests.xcresult
+          if-no-files-found: ignore
+          retention-days: 14

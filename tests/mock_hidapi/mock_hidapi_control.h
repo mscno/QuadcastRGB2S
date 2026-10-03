@@ -19,6 +19,7 @@ extern int mock_hid_has_device;
 extern int mock_hid_interface_number;
 extern int mock_hid_open_success;
 extern int mock_hid_write_fail_call;
+extern int mock_hid_short_write;
 extern int mock_hid_read_result;
 
 extern int mock_hid_packet_count;

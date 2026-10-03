@@ -1,32 +1,18 @@
-//
-//  QuadcastRGBAppUITestsLaunchTests.swift
-//  QuadcastRGBAppUITests
-//
-//  Created by Mads Schou-Andreasen on 12/02/2026.
-//
-
 import XCTest
 
 final class QuadcastRGBAppUITestsLaunchTests: XCTestCase {
-
-    override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
-    }
-
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-    }
+    override class var runsForEachTargetApplicationUIConfiguration: Bool { true }
 
     @MainActor
-    func testLaunch() throws {
+    func testLaunchWithoutDeviceShowsUsableSettings() {
         let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
         app.launch()
-
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Launch Screen"
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["custom-color"].exists)
+        XCTAssertTrue(app.buttons["reconnect"].exists)
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "Liquid Glass – Launch"
         attachment.lifetime = .keepAlways
         add(attachment)
     }

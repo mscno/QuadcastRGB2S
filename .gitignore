@@ -1,6 +1,7 @@
 temp/
 
-deps.mk # auto created by Makefile
+deps.mk
+/quadcastrgb
 hyper.pcap
 
 # Build artifacts
@@ -18,3 +19,12 @@ xcuserdata/
 
 # OS noise
 .DS_Store
+
+# Local packages, credentials, and tool caches
+/dist/
+/.venv/
+/QuadcastRGBApp/com.apple.DeveloperTools/
+*.p12
+*.p8
+*.keychain-db
+__pycache__/

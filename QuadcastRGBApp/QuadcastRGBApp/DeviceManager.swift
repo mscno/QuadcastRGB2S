@@ -17,43 +17,42 @@ final class DeviceManager: ObservableObject {
         (colors.first ?? .black).color
     }
 
-    private var ctx: OpaquePointer?
-    private let lock = NSLock()
     private let generator: FrameGenerator
-    private var workerThread: Thread?
-    private var running = false
+    private var worker: DeviceWorker?
+    private var session = 0
     private var settingsSubscription: AnyCancellable?
-    private var consecutiveFailures = 0
 
     private init() {
         generator = FrameGenerator(mode: .solid, colors: [RGB(r: 255, g: 0, b: 0)], speed: 50, delay: 10, brightness: 100)
-        loadSettings()
+        if !Self.isTesting { loadSettings() }
         generator.regenerate(mode: mode, colors: colors, speed: speed, delay: delay, brightness: brightness)
         observeSettings()
-        start()
+        // Unit/UI tests never touch USB devices or the user's saved settings.
+        if !Self.isTesting {
+            start()
+        }
     }
 
     func start() {
-        guard !running else { return }
-        running = true
-        let thread = Thread { [weak self] in
-            self?.workerLoop()
+        guard worker == nil else { return }
+        session += 1
+        let token = session
+        let newWorker = DeviceWorker(transport: HIDTransport(), generator: generator) { [weak self] status in
+            Task { @MainActor [weak self] in
+                guard let self, self.session == token else { return }
+                self.connected = status == .connected
+                self.needsInputMonitoring = status == .needsPermission
+            }
         }
-        thread.name = "QC2S-Worker"
-        thread.qualityOfService = .userInitiated
-        thread.start()
-        workerThread = thread
+        worker = newWorker
+        newWorker.start()
     }
 
     func stop() {
-        running = false
-        workerThread = nil
-        lock.lock()
-        if let c = ctx { qc2s_close(c); ctx = nil }
-        lock.unlock()
-        Task { @MainActor in
-            self.connected = false
-        }
+        session += 1
+        worker?.stop()
+        worker = nil
+        connected = false
     }
 
     func reconnect() {
@@ -78,7 +77,7 @@ final class DeviceManager: ObservableObject {
             $delay.map { _ in () }.eraseToAnyPublisher(),
             $brightness.map { _ in () }.eraseToAnyPublisher()
         )
-        .receive(on: DispatchQueue.main)
+        .debounce(for: .milliseconds(40), scheduler: DispatchQueue.main)
         .sink { [weak self] in
             self?.onSettingsChanged()
         }
@@ -89,63 +88,27 @@ final class DeviceManager: ObservableObject {
         persistSettings()
     }
 
-    private func workerLoop() {
-        while running {
-            lock.lock()
-            let currentCtx = ctx
-            lock.unlock()
-
-            if let c = currentCtx {
-                let frame = generator.nextFrame()
-                let res = qc2s_set_frame(
-                    c,
-                    frame.upper.r, frame.upper.g, frame.upper.b,
-                    frame.lower.r, frame.lower.g, frame.lower.b
-                )
-                if res < 0 {
-                    lock.lock()
-                    qc2s_close(c)
-                    ctx = nil
-                    lock.unlock()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.connected = false
-                    }
-                    continue
-                }
-            } else {
-                // Check TCC before attempting open
-                let tccGranted = qc2s_tcc_listen_access_allowed() != 0
-                if !tccGranted {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.needsInputMonitoring = true
-                    }
-                    Thread.sleep(forTimeInterval: 3.0)
-                    continue
-                }
-
-                let newCtx = qc2s_open()
-                if let c = newCtx {
-                    lock.lock()
-                    ctx = c
-                    lock.unlock()
-                    consecutiveFailures = 0
-                    DispatchQueue.main.async { [weak self] in
-                        self?.connected = true
-                        self?.needsInputMonitoring = false
-                    }
-                } else {
-                    consecutiveFailures += 1
-                    Thread.sleep(forTimeInterval: 2.0)
-                }
-                continue
-            }
-        }
-    }
-
     // MARK: - Persistence
 
+    private static var isTesting: Bool {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return true }
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        #else
+        return false
+        #endif
+    }
+
+    private static var settingsDefaults: UserDefaults {
+        if Self.isTesting {
+            return UserDefaults(suiteName: "com.mscno.QuadcastRGBApp.tests")!
+        }
+        return .standard
+    }
+
     private func persistSettings() {
-        let defaults = UserDefaults.standard
+        guard !Self.isTesting else { return }
+        let defaults = Self.settingsDefaults
         defaults.set(mode.rawValue, forKey: "lightingMode")
         defaults.set(colors.map { $0.hexString }, forKey: "colors")
         defaults.set(speed, forKey: "speed")
@@ -154,17 +117,37 @@ final class DeviceManager: ObservableObject {
     }
 
     private func loadSettings() {
-        let defaults = UserDefaults.standard
+        let defaults = Self.settingsDefaults
         if let modeStr = defaults.string(forKey: "lightingMode"),
            let m = LightingMode(rawValue: modeStr) {
             mode = m
         }
         if let hexes = defaults.stringArray(forKey: "colors"), !hexes.isEmpty {
             let parsed = hexes.compactMap { RGB(hex: $0) }
-            if !parsed.isEmpty { colors = parsed }
+            if !parsed.isEmpty { colors = Array(parsed.prefix(10)) }
         }
-        if defaults.object(forKey: "speed") != nil { speed = defaults.integer(forKey: "speed") }
-        if defaults.object(forKey: "delay") != nil { delay = defaults.integer(forKey: "delay") }
-        if defaults.object(forKey: "brightness") != nil { brightness = defaults.integer(forKey: "brightness") }
+        if defaults.object(forKey: "speed") != nil { speed = min(100, max(0, defaults.integer(forKey: "speed"))) }
+        if defaults.object(forKey: "delay") != nil { delay = min(100, max(0, defaults.integer(forKey: "delay"))) }
+        if defaults.object(forKey: "brightness") != nil { brightness = min(100, max(0, defaults.integer(forKey: "brightness"))) }
+    }
+}
+
+/// The worker owns this object and accesses its HID context only on its queue.
+private final class HIDTransport: DeviceTransport, @unchecked Sendable {
+    private var context: OpaquePointer?
+    var permissionGranted: Bool { qc2s_tcc_listen_access_allowed() != 0 }
+    func open() -> Bool {
+        context = qc2s_open()
+        return context != nil
+    }
+    func send(_ frame: AnimationFrame) -> Bool {
+        guard let context else { return false }
+        return qc2s_set_frame(context, frame.upper.r, frame.upper.g, frame.upper.b,
+                              frame.lower.r, frame.lower.g, frame.lower.b) == 0
+    }
+    func isConnected() -> Bool { qc2s_is_connected(context) != 0 }
+    func close() {
+        qc2s_close(context)
+        context = nil
     }
 }

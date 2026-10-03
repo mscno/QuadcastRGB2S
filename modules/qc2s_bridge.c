@@ -78,8 +78,8 @@ static int send_report_locked(qc2s_ctx *ctx, const uint8_t *packet, int expect_a
     int res;
 
     res = hid_write(ctx->dev, packet, QC2S_PACKET_SIZE);
-    if (res < 0) {
-        QC2S_LOG("[qc2s] hid_write failed\n");
+    if (res != QC2S_PACKET_SIZE) {
+        QC2S_LOG("[qc2s] incomplete hid_write\n");
         return -1;
     }
 

@@ -20,6 +20,7 @@ int mock_hid_has_device = 1;
 int mock_hid_interface_number = 1;
 int mock_hid_open_success = 1;
 int mock_hid_write_fail_call = 0;
+int mock_hid_short_write = 0;
 int mock_hid_read_result = 0;
 
 int mock_hid_packet_count = 0;
@@ -40,6 +41,7 @@ void mock_hid_reset(void)
     mock_hid_interface_number = 1;
     mock_hid_open_success = 1;
     mock_hid_write_fail_call = 0;
+    mock_hid_short_write = 0;
     mock_hid_read_result = 0;
 
     mock_hid_packet_count = 0;
@@ -121,7 +123,7 @@ int hid_write(hid_device *dev, const unsigned char *data, size_t length)
         return -1;
     }
 
-    return (int)length;
+    return mock_hid_short_write ? (int)length - 1 : (int)length;
 }
 
 int hid_read_timeout(hid_device *dev, unsigned char *data, size_t length,

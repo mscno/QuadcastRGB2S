@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct RGB: Equatable, Codable, Hashable {
+struct RGB: Equatable, Codable, Hashable, Sendable {
     var r: UInt8, g: UInt8, b: UInt8
 
     static let black = RGB(r: 0, g: 0, b: 0)
@@ -10,7 +10,8 @@ struct RGB: Equatable, Codable, Hashable {
     }
 
     func scaled(brightness: Int) -> RGB {
-        RGB(
+        let brightness = min(100, max(0, brightness))
+        return RGB(
             r: UInt8(Int(r) * brightness / 100),
             g: UInt8(Int(g) * brightness / 100),
             b: UInt8(Int(b) * brightness / 100)
@@ -33,12 +34,12 @@ struct RGB: Equatable, Codable, Hashable {
     }
 }
 
-struct AnimationFrame {
+struct AnimationFrame: Equatable, Sendable {
     let upper: RGB
     let lower: RGB
 }
 
-enum LightingMode: String, CaseIterable, Codable {
+enum LightingMode: String, CaseIterable, Codable, Sendable {
     case solid, blink, cycle, wave, lightning, pulse
 
     var label: String { rawValue.capitalized }
@@ -62,7 +63,7 @@ enum LightingMode: String, CaseIterable, Codable {
         case .blink: return "Flash between colors"
         case .cycle: return "Smooth color transitions"
         case .wave: return "Offset upper and lower zones"
-        case .lightning: return "Random flash effects"
+        case .lightning: return "Staggered flash effects"
         case .pulse: return "Synchronized breathing"
         }
     }

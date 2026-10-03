@@ -9,8 +9,8 @@ endif
 
 VERSION = 1.0.5
 
-CFLAGS_DEV = -g -Wall -DVERSION="\"$(VERSION)\"" -D DEBUG
-CFLAGS_INS = -s -O2 -DVERSION="\"$(VERSION)\""
+CFLAGS_DEV = -g -Wall -Wextra -DVERSION="\"$(VERSION)\"" -D DEBUG
+CFLAGS_INS = -O2 -DVERSION="\"$(VERSION)\""
 CPPFLAGS =
 LDFLAGS =
 
@@ -107,9 +107,11 @@ endif
 deps.mk: $(SRCMODULES)
 	$(CC) $(CPPFLAGS) -MM $^ > $@
 
+TEST_CFLAGS ?= -g -Wall -Wextra
+
 test: tests/test_qc2s.c tests/test_qc2s_bridge.c
-	$(CC) $(CPPFLAGS) -g -Wall -D DEBUG tests/test_qc2s.c -o tests/test_qc2s
-	$(CC) $(CPPFLAGS) -g -Wall -D DEBUG -DQC2S_BRIDGE_DISABLE_SLEEP \
+	$(CC) $(TEST_CFLAGS) -D DEBUG tests/test_qc2s.c -o tests/test_qc2s
+	$(CC) $(TEST_CFLAGS) -D DEBUG -DQC2S_BRIDGE_DISABLE_SLEEP \
 		-Itests/mock_hidapi tests/test_qc2s_bridge.c modules/qc2s_bridge.c \
 		tests/mock_hidapi/mock_hidapi.c tests/mock_hidapi/mock_qc2s_tcc.c \
 		-pthread -o tests/test_qc2s_bridge
@@ -122,3 +124,7 @@ tags:
 clean:
 	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tests/test_qc2s tests/test_qc2s_bridge tags \
 		packages/deb/$(DEBNAME) deb/$(DEBNAME)
+
+.PHONY: test-sanitize
+test-sanitize:
+	$(MAKE) test TEST_CFLAGS="-g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=address,undefined"

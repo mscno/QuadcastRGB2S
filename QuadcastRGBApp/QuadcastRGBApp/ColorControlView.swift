@@ -1,368 +1,243 @@
 import SwiftUI
 
-private let presetColors: [RGB] = [
-    RGB(r: 255, g: 0, b: 0),       // Red
-    RGB(r: 255, g: 128, b: 0),     // Orange
-    RGB(r: 255, g: 255, b: 0),     // Yellow
-    RGB(r: 0, g: 255, b: 0),       // Green
-    RGB(r: 0, g: 255, b: 255),     // Cyan
-    RGB(r: 0, g: 0, b: 255),       // Blue
-    RGB(r: 128, g: 0, b: 255),     // Purple
-    RGB(r: 255, g: 0, b: 128),     // Pink
-    RGB(r: 255, g: 255, b: 255),   // White
-    RGB(r: 255, g: 200, b: 120),   // Warm white
-    RGB(r: 128, g: 255, b: 128),   // Mint
-    RGB(r: 255, g: 128, b: 128),   // Salmon
+private let presetColors: [(name: String, rgb: RGB)] = [
+    ("Red", RGB(r: 255, g: 0, b: 0)),
+    ("Orange", RGB(r: 255, g: 128, b: 0)),
+    ("Yellow", RGB(r: 255, g: 255, b: 0)),
+    ("Green", RGB(r: 0, g: 255, b: 0)),
+    ("Cyan", RGB(r: 0, g: 255, b: 255)),
+    ("Blue", RGB(r: 0, g: 0, b: 255)),
+    ("Purple", RGB(r: 128, g: 0, b: 255)),
+    ("Pink", RGB(r: 255, g: 0, b: 128)),
+    ("White", RGB(r: 255, g: 255, b: 255)),
+    ("Warm white", RGB(r: 255, g: 200, b: 120)),
+    ("Mint", RGB(r: 128, g: 255, b: 128)),
+    ("Salmon", RGB(r: 255, g: 128, b: 128)),
 ]
-
-// MARK: - Settings Window
 
 struct SettingsWindowContent: View {
     @EnvironmentObject var dm: DeviceManager
-    @State private var selectedMode: LightingMode?
 
     var body: some View {
         NavigationSplitView {
-            List(LightingMode.allCases, id: \.self, selection: $selectedMode) { mode in
-                ModeRow(mode: mode, isActive: dm.mode == mode, tint: dm.primaryColor)
-                    .tag(mode)
+            List(LightingMode.allCases, id: \.self, selection: Binding<LightingMode?>(
+                get: { dm.mode }, set: { if let mode = $0 { dm.mode = mode } }
+            )) { mode in
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(mode.label)
+                        Text(mode.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                } icon: {
+                    Image(systemName: mode.icon)
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .tag(mode)
+                .accessibilityIdentifier("mode-\(mode.rawValue)")
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
         } detail: {
             DetailView()
         }
-        .frame(minWidth: 660, minHeight: 560)
-        .onAppear { selectedMode = dm.mode }
-        .onChange(of: selectedMode) { _, newMode in
-            if let m = newMode { dm.mode = m }
-        }
+        .frame(minWidth: 700, minHeight: 620)
     }
 }
-
-// MARK: - Sidebar Mode Row
-
-private struct ModeRow: View {
-    let mode: LightingMode
-    let isActive: Bool
-    let tint: Color
-
-    var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(mode.label)
-                Text(mode.description)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        } icon: {
-            Image(systemName: mode.icon)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(isActive ? tint : .secondary)
-                .frame(width: 20)
-        }
-    }
-}
-
-// MARK: - Detail View
 
 private struct DetailView: View {
     @EnvironmentObject var dm: DeviceManager
-    @State private var brightness: Double = 100
-    @State private var speed: Double = 50
-    @State private var delay: Double = 10
+    @State private var customColor: Color = .red
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var maxColors: Int {
-        dm.mode == .solid ? 1 : 10
-    }
+    private var maxColors: Int { dm.mode == .solid ? 1 : 10 }
+    private var visibleColors: [RGB] { Array(dm.colors.prefix(maxColors)) }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if dm.needsInputMonitoring {
-                    permissionBanner
-                }
-                previewBar
+            VStack(alignment: .leading, spacing: 28) {
+                if dm.needsInputMonitoring { permissionBanner }
+                preview
                 colorSection
-                if !dm.colors.isEmpty {
-                    selectedColors
-                }
-                animationSection
+                selectedColors
+                controls
             }
-            .padding(24)
-            .frame(maxWidth: 500)
+            .padding(28)
+            .frame(maxWidth: 540, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
         .navigationTitle(dm.mode.label)
         .navigationSubtitle(dm.mode.description)
         .toolbar {
             ToolbarItem(placement: .status) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(dm.connected ? Color.green : Color.red)
-                        .frame(width: 7, height: 7)
-                    Text(dm.connected ? "Connected" : "Disconnected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Label(dm.connected ? "Connected" : "Disconnected",
+                      systemImage: dm.connected ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(dm.connected ? Color.green : Color.secondary)
+                    .font(.caption)
+                    .accessibilityIdentifier("connection-status")
             }
             ToolbarItem(placement: .primaryAction) {
                 if !dm.connected {
-                    Button("Reconnect", systemImage: "arrow.clockwise") {
-                        dm.reconnect()
+                    Button("Reconnect", systemImage: "arrow.clockwise", action: dm.reconnect)
+                        .accessibilityIdentifier("reconnect")
+                }
+            }
+        }
+        .animation(reduceMotion ? nil : .smooth, value: dm.mode)
+    }
+
+    private var permissionBanner: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Allow Input Monitoring", systemImage: "exclamationmark.shield")
+                .font(.headline)
+            Text("macOS requires this permission to control the microphone's lights. Allow QuadCast RGB in System Settings, then reconnect.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            GlassEffectContainer {
+                HStack {
+                    Button("Open System Settings", action: dm.openInputMonitoringSettings)
+                        .buttonStyle(.glassProminent)
+                    Button("Reconnect", action: dm.reconnect)
+                        .buttonStyle(.glass)
+                }
+            }
+        }
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Palette").font(.headline)
+            RoundedRectangle(cornerRadius: 18)
+                .fill(LinearGradient(
+                    colors: visibleColors.isEmpty ? [.black] : visibleColors.map { $0.scaled(brightness: dm.brightness).color },
+                    startPoint: .leading, endPoint: .trailing
+                ))
+                .frame(height: 64)
+                .accessibilityLabel("Lighting palette at \(dm.brightness) percent brightness")
+        }
+    }
+
+    private var colorSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Colors").font(.headline)
+            GlassEffectContainer(spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(48), spacing: 12), count: 6), spacing: 12) {
+                    ForEach(presetColors, id: \.name) { preset in
+                        ColorSwatch(color: preset.rgb, label: preset.name,
+                                    isSelected: visibleColors.contains(preset.rgb)) {
+                            addOrSetColor(preset.rgb)
+                        }
+                        .accessibilityIdentifier("color-\(preset.name)")
                     }
                 }
             }
-        }
-        .animation(.smooth, value: dm.mode)
-        .onAppear { syncFromModel() }
-        .onChange(of: dm.mode) { _, _ in syncFromModel() }
-        .onChange(of: brightness) { _, val in dm.brightness = Int(val) }
-        .onChange(of: speed) { _, val in dm.speed = Int(val) }
-        .onChange(of: delay) { _, val in dm.delay = Int(val) }
-    }
-
-    // MARK: - Permission Banner
-
-    private var permissionBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Input Monitoring Required", systemImage: "exclamationmark.shield")
-                .font(.headline)
-            Text("QuadCast RGB needs Input Monitoring permission to communicate with your microphone. Grant access in System Settings, then click Reconnect.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                Button("Open System Settings") {
-                    dm.openInputMonitoringSettings()
-                }
-                .buttonStyle(.borderedProminent)
-                Button("Reconnect") {
-                    dm.reconnect()
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.orange.opacity(0.3)))
-    }
-
-    private func syncFromModel() {
-        brightness = Double(dm.brightness)
-        speed = Double(dm.speed)
-        delay = Double(dm.delay)
-    }
-
-    // MARK: - Preview
-
-    private var previewBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Preview")
-                .font(.headline)
-
-            RoundedRectangle(cornerRadius: 10)
-                .fill(LinearGradient(
-                    colors: dm.colors.isEmpty
-                        ? [Color.black]
-                        : dm.colors.map { $0.scaled(brightness: dm.brightness).color },
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ))
-                .frame(height: 48)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(.primary.opacity(0.08))
-                )
-                .shadow(
-                    color: (dm.colors.first?.color ?? .clear).opacity(0.25),
-                    radius: 16, y: 6
-                )
-        }
-    }
-
-    // MARK: - Colors
-
-    private var colorSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Colors")
-                    .font(.headline)
-                Spacer()
-                Button("Custom Color...") {
-                    openColorPanel()
-                }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(Color.accentColor)
-            }
-
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.fixed(40), spacing: 8), count: 6),
-                spacing: 8
-            ) {
-                ForEach(presetColors, id: \.self) { preset in
-                    ColorSwatch(
-                        color: preset,
-                        isSelected: dm.colors.contains(preset),
-                        action: { addOrSetColor(preset) }
-                    )
+            GlassEffectContainer {
+                HStack {
+                    ColorPicker("Custom color", selection: $customColor, supportsOpacity: false)
+                        .accessibilityIdentifier("custom-color")
+                    Button(maxColors == 1 ? "Use color" : "Add color") {
+                        guard let color = NSColor(customColor).usingColorSpace(.sRGB) else { return }
+                        addOrSetColor(RGB(r: UInt8(clamping: Int(color.redComponent * 255)),
+                                         g: UInt8(clamping: Int(color.greenComponent * 255)),
+                                         b: UInt8(clamping: Int(color.blueComponent * 255))))
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(maxColors > 1 && dm.colors.count >= maxColors)
                 }
             }
         }
     }
 
     private var selectedColors: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Selected")
+                Text(maxColors == 1 ? "Selected color" : "Palette · \(dm.colors.count)/10")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if dm.colors.count > 1 {
-                    Button("Clear") {
-                        if let first = dm.colors.first {
-                            dm.colors = [first]
+                if maxColors > 1 && dm.colors.count > 1 {
+                    Button("Keep first") { dm.colors = Array(dm.colors.prefix(1)) }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                }
+            }
+            GlassEffectContainer(spacing: 6) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 32), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(Array(visibleColors.enumerated()), id: \.offset) { index, color in
+                        Button {
+                            if dm.colors.count > 1 && maxColors > 1 { dm.colors.remove(at: index) }
+                        } label: {
+                            Circle().fill(color.color).frame(width: 18, height: 18).padding(7)
                         }
+                        .buttonStyle(.plain)
+                        .glassEffect(.regular.tint(color.color).interactive(), in: .circle)
+                        .disabled(maxColors == 1 || dm.colors.count == 1)
+                        .accessibilityLabel("Remove color \(index + 1), \(color.hexString)")
                     }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 6) {
-                ForEach(Array(dm.colors.enumerated()), id: \.offset) { index, c in
-                    Circle()
-                        .fill(c.color)
-                        .frame(width: 24, height: 24)
-                        .overlay(Circle().strokeBorder(.primary.opacity(0.15)))
-                        .onTapGesture {
-                            if dm.colors.count > 1 {
-                                dm.colors.remove(at: index)
-                            }
-                        }
                 }
             }
         }
     }
 
-    // MARK: - Animation Controls
-
-    private var animationSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Controls")
-                .font(.headline)
-
-            sliderRow(label: "Brightness", icon: "sun.max", value: $brightness)
-
-            if dm.mode.hasSpeed {
-                sliderRow(label: "Speed", icon: "hare", value: $speed)
-            }
-
-            if dm.mode.hasDelay {
-                sliderRow(label: "Delay", icon: "clock", value: $delay)
-            }
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Controls").font(.headline)
+            slider("Brightness", icon: "sun.max", value: $dm.brightness)
+            if dm.mode.hasSpeed { slider("Speed", icon: "hare", value: $dm.speed) }
+            if dm.mode.hasDelay { slider("Delay", icon: "clock", value: $dm.delay) }
         }
     }
 
-    private func sliderRow(
-        label: String,
-        icon: String,
-        value: Binding<Double>
-    ) -> some View {
-        HStack(spacing: 10) {
-            Label(label, systemImage: icon)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: 110, alignment: .leading)
-            Slider(value: value, in: 0...100, step: 1)
-            Text("\(Int(value.wrappedValue))")
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 32, alignment: .trailing)
+    private func slider(_ label: String, icon: String, value: Binding<Int>) -> some View {
+        HStack(spacing: 12) {
+            Label(label, systemImage: icon).frame(width: 110, alignment: .leading)
+            Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0) }), in: 0...100, step: 1)
+                .accessibilityLabel(label)
+                .accessibilityIdentifier("slider-\(label)")
+            Text("\(value.wrappedValue)").monospacedDigit().foregroundStyle(.secondary).frame(width: 30)
         }
+        .font(.callout)
     }
 
-    // MARK: - Color Management
-
-    private func addOrSetColor(_ c: RGB) {
+    private func addOrSetColor(_ color: RGB) {
         if maxColors == 1 {
-            dm.colors = [c]
-        } else if dm.colors.contains(c) {
-            if dm.colors.count > 1 {
-                dm.colors.removeAll { $0 == c }
-            }
+            dm.colors = [color]
+        } else if dm.colors.contains(color) {
+            if dm.colors.count > 1 { dm.colors.removeAll { $0 == color } }
         } else if dm.colors.count < maxColors {
-            dm.colors.append(c)
+            dm.colors.append(color)
         }
-    }
-
-    private func openColorPanel() {
-        let panel = NSColorPanel.shared
-        panel.setTarget(nil)
-        panel.setAction(nil)
-        panel.showsAlpha = false
-        panel.mode = .wheel
-        panel.isContinuous = false
-
-        let handler = ColorPanelHandler { nsColor in
-            let c = nsColor.usingColorSpace(.sRGB) ?? nsColor
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            c.getRed(&r, green: &g, blue: &b, alpha: &a)
-            let rgb = RGB(
-                r: UInt8(max(0, min(255, r * 255))),
-                g: UInt8(max(0, min(255, g * 255))),
-                b: UInt8(max(0, min(255, b * 255)))
-            )
-            DispatchQueue.main.async {
-                self.addOrSetColor(rgb)
-            }
-        }
-        panel.setTarget(handler)
-        panel.setAction(#selector(ColorPanelHandler.colorChanged(_:)))
-        panel.orderFront(nil)
-        objc_setAssociatedObject(panel, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
     }
 }
-
-// MARK: - Color Swatch
 
 private struct ColorSwatch: View {
     let color: RGB
+    let label: String
     let isSelected: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(color.color)
-            .frame(width: 40, height: 32)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        isSelected ? Color.accentColor : Color.primary.opacity(0.1),
-                        lineWidth: isSelected ? 2.5 : 1
-                    )
-            )
-            .shadow(color: isSelected ? color.color.opacity(0.4) : .clear, radius: 6)
-            .scaleEffect(isHovered ? 1.06 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovered)
-            .onHover { isHovered = $0 }
-            .onTapGesture(perform: action)
-    }
-}
-
-// MARK: - Color Panel Handler
-
-private class ColorPanelHandler: NSObject {
-    let callback: (NSColor) -> Void
-    init(callback: @escaping (NSColor) -> Void) {
-        self.callback = callback
-    }
-    @objc func colorChanged(_ sender: NSColorPanel) {
-        callback(sender.color)
+        Button(action: action) {
+            Circle()
+                .fill(color.color)
+                .frame(width: 26, height: 26)
+                .overlay {
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(color == RGB(r: 255, g: 255, b: 255) ? .black : .white)
+                            .shadow(color: .black.opacity(0.6), radius: 2)
+                    }
+                }
+                .padding(9)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.tint(color.color.opacity(0.3)).interactive(), in: .circle)
+        .accessibilityLabel(label)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .help(label)
     }
 }

@@ -19,7 +19,9 @@ final class FrameGenerator: @unchecked Sendable {
     }
 
     func regenerate(mode: LightingMode, colors: [RGB], speed: Int, delay: Int, brightness: Int) {
-        let scaled = colors.map { $0.scaled(brightness: brightness) }
+        let speed = min(100, max(0, speed))
+        let delay = min(100, max(0, delay))
+        let scaled = colors.prefix(10).map { $0.scaled(brightness: brightness) }
         let newFrames: [AnimationFrame]
         switch mode {
         case .solid:
@@ -97,17 +99,11 @@ final class FrameGenerator: @unchecked Sendable {
         }
 
         // Lower uses shifted order (first color moved to end)
-        var shifted = colors
-        shifted.append(shifted.removeFirst())
-        var lowerFrames: [RGB] = []
-        for i in 0..<shifted.count {
-            let start = shifted[i]
-            let end = shifted[(i + 1) % shifted.count]
-            lowerFrames.append(contentsOf: makeGradient(from: start, to: end, length: trLength))
+        // The lower zone is the same cycle shifted by one color transition.
+        // Reuse its samples instead of generating a second gradient array.
+        return upperFrames.indices.map {
+            AnimationFrame(upper: upperFrames[$0], lower: upperFrames[($0 + trLength) % upperFrames.count])
         }
-
-        let count = min(upperFrames.count, lowerFrames.count)
-        return (0..<count).map { AnimationFrame(upper: upperFrames[$0], lower: lowerFrames[$0]) }
     }
 
     // MARK: - Lightning / Pulse

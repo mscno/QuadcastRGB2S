@@ -3,9 +3,8 @@ import ServiceManagement
 
 @main
 struct QuadcastRGBApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var deviceManager = DeviceManager.shared
-    @Environment(\.openWindow) private var openWindow
-
     var body: some Scene {
         MenuBarExtra {
             MenuBarMenu()
@@ -22,7 +21,7 @@ struct QuadcastRGBApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                 }
         }
-        .defaultSize(width: 680, height: 580)
+        .defaultSize(width: 740, height: 680)
         .defaultLaunchBehavior(.presented)
     }
 }
@@ -114,5 +113,12 @@ struct MenuBarMenu: View {
             deviceManager.stop()
             NSApplication.shared.terminate(nil)
         }
+    }
+}
+
+@MainActor
+private final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        DeviceManager.shared.stop()
     }
 }

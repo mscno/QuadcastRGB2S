@@ -143,6 +143,47 @@ static void test_connectivity_check(void)
     qc2s_close(ctx);
 }
 
+static void test_open_failure_cleans_up_hidapi(void)
+{
+    mock_hid_reset();
+    mock_hid_init_result = -1;
+    ASSERT_TRUE(qc2s_open() == NULL, "hid_init failure returns NULL");
+    ASSERT_EQ_INT(mock_hid_exit_calls, 0, "failed init is not released");
+    mock_hid_reset();
+    mock_hid_has_device = 0;
+    ASSERT_TRUE(qc2s_open() == NULL, "missing device returns NULL");
+    ASSERT_EQ_INT(mock_hid_exit_calls, 1, "missing device releases hidapi");
+    mock_hid_reset();
+    mock_hid_open_success = 0;
+    ASSERT_TRUE(qc2s_open() == NULL, "failed open returns NULL");
+    ASSERT_EQ_INT(mock_hid_exit_calls, 1, "failed open releases hidapi");
+}
+
+static void test_short_write_fails_and_init_is_retried(void)
+{
+    qc2s_ctx *ctx;
+    mock_hid_reset();
+    ctx = qc2s_open();
+    mock_hid_short_write = 1;
+    ASSERT_EQ_INT(qc2s_set_color(ctx, 1, 2, 3), -1, "partial report is a failure");
+    ASSERT_EQ_INT(mock_hid_read_calls, 0, "no read after incomplete write");
+    mock_hid_short_write = 0;
+    ASSERT_EQ_INT(qc2s_set_color(ctx, 1, 2, 3), 0, "retry after short write");
+    ASSERT_EQ_INT(mock_hid_packets[1][0], QC2S_CMD_INIT, "retry sends init again");
+    ASSERT_EQ_INT(qc2s_set_color(ctx, 4, 5, 6), 0, "next complete frame succeeds");
+    ASSERT_EQ_INT(mock_hid_packets[9][0], QC2S_CMD_COLOR, "successful init reused");
+    qc2s_close(ctx);
+}
+
+static void test_null_context(void)
+{
+    uint8_t packet[QC2S_PACKET_SIZE] = {0};
+    ASSERT_EQ_INT(qc2s_set_color(NULL, 1, 2, 3), -1, "null set_color");
+    ASSERT_EQ_INT(qc2s_is_connected(NULL), 0, "null connectivity");
+    ASSERT_EQ_INT(qc2s_send_report(NULL, packet, 1), -1, "null report");
+    qc2s_close(NULL);
+}
+
 int main(void)
 {
     test_open_close_refcount();
@@ -150,6 +191,9 @@ int main(void)
     test_set_frame_uses_upper_and_lower_colors();
     test_set_color_write_error();
     test_connectivity_check();
+    test_open_failure_cleans_up_hidapi();
+    test_short_write_fails_and_init_is_retried();
+    test_null_context();
 
     if (tests_failed) {
         fprintf(stderr, "\n%d/%d tests FAILED\n", tests_failed, tests_run);

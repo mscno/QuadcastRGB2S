@@ -1,6 +1,7 @@
 /*
  * qc2s_bridge.h — Shared C API for QuadCast 2S RGB control
- * Thread-safe per context, depends only on hidapi.
+ * I/O is serialized per context, depends only on hidapi.
+ * The owner must stop all I/O callers before closing/freeing a context.
  */
 #ifndef QC2S_BRIDGE_H
 #define QC2S_BRIDGE_H
