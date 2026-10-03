@@ -24,14 +24,14 @@
  * 51 Franklin Street, Fifth Floor Boston, MA 02110 USA. 
  */
 #include "argparser.h"
+#include <errno.h>
 
 /* Static declarations */
 static void set_arg(const char ***arg_pp, const char **argv_end,
                     struct colschemes *cs, int *state, int *verbose);
 static void set_br_spd_dly(const char **arg_p, const char **argv_end,
                            int state, struct colschemes *cs);
-static void set_mode(const char ***arg_pp, const char **argv_end,
-                     int state, struct colschemes *cs);
+static void set_mode(const char ***arg_pp, int state, struct colschemes *cs);
 static void set_colors(const char ***arg_pp, const char **argv_end,
                        int state, struct colschemes *cs);
 static void write_default_cols(struct colschemes *cs, int state);
@@ -119,7 +119,7 @@ static void set_arg(const char ***arg_pp, const char **argv_end,
         set_br_spd_dly(*arg_pp, argv_end, *state, cs);
         (*arg_pp)++; /* skip option's parameter */
     } else if(is_mode(**arg_pp)) {
-        set_mode(arg_pp, argv_end, *state, cs);
+        set_mode(arg_pp, *state, cs);
         set_colors(arg_pp, argv_end, *state, cs);
     } else {
         fprintf(stderr, BADARG_MSG, **arg_pp);
@@ -140,13 +140,15 @@ static int is_mode(const char *str)
 static void set_br_spd_dly(const char **arg_p, const char **argv_end,
                            int state, struct colschemes *cs)
 {
-    short num;
+    long num;
+    char *end;
     if(no_opt_param(arg_p, argv_end)) {
         fprintf(stderr, NOPARAM_SHORT_MSG, *arg_p);
         free(cs); exit(argerr);
     }
-    num = atoi(*(arg_p+1));
-    if(num > MAX_BR_SPD_DLY) {
+    errno = 0;
+    num = strtol(*(arg_p+1), &end, 10);
+    if(errno == ERANGE || *end != '\0' || num < 0 || num > MAX_BR_SPD_DLY) {
         fprintf(stderr, BS_BADPARAM_MSG, *arg_p);
         free(cs); exit(argerr);
     }
@@ -161,7 +163,7 @@ static void set_br_spd_dly(const char **arg_p, const char **argv_end,
 
 static int is_number(const char *str)
 {
-    /* Very primitive check, but enough for no_opt_param */
+    if(!*str) return 0;
     for(; *str; str++) {
         if(*str < '0' || *str > '9')
             return 0;
@@ -174,8 +176,7 @@ static int no_opt_param(const char **arg_p, const char **argv_end)
     return (arg_p == argv_end || !(is_number(*(arg_p+1)))) ? 1 : 0;
 }
 
-static void set_mode(const char ***arg_pp, const char **argv_end,
-                     int state, struct colschemes *cs)
+static void set_mode(const char ***arg_pp, int state, struct colschemes *cs)
 {
     write_str_param(&(cs->upper.mode), &(cs->lower.mode), **arg_pp, state);
     if(!(cs->upper.mode) || !(cs->lower.mode)) { /* write solid to the other */
@@ -206,7 +207,7 @@ static void set_colors(const char ***arg_pp, const char **argv_end,
             write_int_param(&(cs->upper.colors[col_cnt]),
                             &(cs->lower.colors[col_cnt]), hexnum, state);
             col_cnt++;
-        } while(is_color(*arg_pp+1, argv_end) && col_cnt < COLORS_CNT);
+        } while(is_color(*arg_pp+1, argv_end) && col_cnt < COLORS_CNT - 1);
 
         write_int_param(&(cs->upper.colors[col_cnt]),
                         &(cs->lower.colors[col_cnt]), nocolor, state);
@@ -236,6 +237,7 @@ static int ishexnumber(const char *str)
 {
     if(*str == '#') /* include the "#RRGGBB" notation */
         str++;
+    if(strlen(str) == 0 || strlen(str) > 6) return 0;
     for(; *str; str++) {
         if(!(*str>='0' && *str<='9') && !(*str>='A' && *str<'G') &&
                                         !(*str>='a' && *str<'g')) {

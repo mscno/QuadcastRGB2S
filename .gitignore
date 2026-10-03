@@ -8,6 +8,7 @@ hyper.pcap
 /dev
 /tests/test_qc2s
 /tests/test_qc2s_bridge
+/tests/test_argparser
 *.o
 *.dSYM/
 *.dmg

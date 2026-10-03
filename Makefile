@@ -109,12 +109,14 @@ deps.mk: $(SRCMODULES)
 
 TEST_CFLAGS ?= -g -Wall -Wextra
 
-test: tests/test_qc2s.c tests/test_qc2s_bridge.c
+test: tests/test_qc2s.c tests/test_qc2s_bridge.c tests/test_argparser.c
 	$(CC) $(TEST_CFLAGS) -D DEBUG tests/test_qc2s.c -o tests/test_qc2s
 	$(CC) $(TEST_CFLAGS) -D DEBUG -DQC2S_BRIDGE_DISABLE_SLEEP \
 		-Itests/mock_hidapi tests/test_qc2s_bridge.c modules/qc2s_bridge.c \
 		tests/mock_hidapi/mock_hidapi.c tests/mock_hidapi/mock_qc2s_tcc.c \
 		-pthread -o tests/test_qc2s_bridge
+	$(CC) $(TEST_CFLAGS) tests/test_argparser.c modules/argparser.c -o tests/test_argparser
+	./tests/test_argparser
 	./tests/test_qc2s
 	./tests/test_qc2s_bridge
 
@@ -122,7 +124,7 @@ tags:
 	ctags *.c $(SRCMODULES)
 
 clean:
-	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tests/test_qc2s tests/test_qc2s_bridge tags \
+	rm -rf $(OBJMODULES) $(BINPATH) $(DEVBINPATH) tests/test_qc2s tests/test_qc2s_bridge tests/test_argparser tags \
 		packages/deb/$(DEBNAME) deb/$(DEBNAME)
 
 .PHONY: test-sanitize

@@ -51,7 +51,6 @@ struct SettingsWindowContent: View {
 private struct DetailView: View {
     @EnvironmentObject var dm: DeviceManager
     @State private var customColor: Color = .red
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var maxColors: Int { dm.mode == .solid ? 1 : 10 }
     private var visibleColors: [RGB] { Array(dm.colors.prefix(maxColors)) }
@@ -77,6 +76,8 @@ private struct DetailView: View {
                       systemImage: dm.connected ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(dm.connected ? Color.green : Color.secondary)
                     .font(.caption)
+                    .labelStyle(.titleAndIcon)
+                    .fixedSize()
                     .accessibilityIdentifier("connection-status")
             }
             ToolbarItem(placement: .primaryAction) {
@@ -86,7 +87,6 @@ private struct DetailView: View {
                 }
             }
         }
-        .animation(reduceMotion ? nil : .smooth, value: dm.mode)
     }
 
     private var permissionBanner: some View {
@@ -224,6 +224,7 @@ private struct ColorSwatch: View {
             Circle()
                 .fill(color.color)
                 .frame(width: 26, height: 26)
+                .overlay(Circle().strokeBorder(.primary.opacity(0.12)))
                 .overlay {
                     if isSelected {
                         Image(systemName: "checkmark")
