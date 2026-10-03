@@ -7,6 +7,8 @@ Control HyperX microphone lighting from macOS or the command line.
 The **macOS menu bar app controls the QuadCast 2S**. It has six lighting modes,
 upper/lower lighting zones, a ten-color palette, brightness and animation controls,
 and optional launch at login. Its interface uses native macOS Liquid Glass.
+
+![QuadCast RGB settings](docs/screenshot.png)
 The C CLI retains support for QuadCast S and DuoCast; QuadCast 2S uses hidapi on macOS.
 
 ## macOS app
