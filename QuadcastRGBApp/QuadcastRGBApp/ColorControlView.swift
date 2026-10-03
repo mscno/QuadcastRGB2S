@@ -15,42 +15,46 @@ private let presetColors: [(name: String, rgb: RGB)] = [
     ("Salmon", RGB(r: 255, g: 128, b: 128)),
 ]
 
+private enum SettingsPage: Hashable {
+    case audio
+    case lighting(LightingMode)
+    static var all: [Self] { [.audio] + LightingMode.allCases.map(Self.lighting) }
+    var label: String { if case .lighting(let mode) = self { return mode.label }; return "Audio" }
+    var icon: String { if case .lighting(let mode) = self { return mode.icon }; return "mic.fill" }
+    var detail: String { if case .lighting(let mode) = self { return mode.description }; return "Levels and microphone test" }
+    var identifier: String { if case .lighting(let mode) = self { return "mode-\(mode.rawValue)" }; return "page-audio" }
+}
+
 struct SettingsWindowContent: View {
     @EnvironmentObject var dm: DeviceManager
-    @State private var selectedMode: LightingMode?
+    @State private var selectedPage: SettingsPage?
 
     var body: some View {
         NavigationSplitView {
-            List(LightingMode.allCases, id: \.self, selection: $selectedMode) { mode in
+            List(SettingsPage.all, id: \.self, selection: $selectedPage) { page in
                 Label {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(mode.label)
-                        Text(mode.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 4)
-                } icon: {
-                    Image(systemName: mode.icon)
-                        .symbolRenderingMode(.hierarchical)
-                }
-                .tag(mode)
-                .accessibilityIdentifier("mode-\(mode.rawValue)")
+                        Text(page.label)
+                        Text(page.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }.padding(.vertical, 4)
+                } icon: { Image(systemName: page.icon).symbolRenderingMode(.hierarchical) }
+                .tag(page)
+                .accessibilityIdentifier(page.identifier)
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
         } detail: {
-            DetailView()
+            if selectedPage == .audio { AudioControlView() } else { DetailView() }
         }
         .frame(minWidth: 700, minHeight: 620)
-        .onAppear { selectedMode = dm.mode }
-        .onChange(of: dm.mode) { _, mode in selectedMode = mode }
-        .onChange(of: selectedMode) { _, mode in
-            guard let mode, mode != dm.mode else { return }
-            // List may change selection during its own update. Publish after it.
+        .onAppear { if selectedPage == nil { selectedPage = .lighting(dm.mode) } }
+        .onChange(of: dm.mode) { _, mode in
+            if selectedPage != .audio { selectedPage = .lighting(mode) }
+        }
+        .onChange(of: selectedPage) { _, page in
+            guard case .lighting(let mode) = page, mode != dm.mode else { return }
             Task { @MainActor in
-                guard selectedMode == mode else { return }
+                guard selectedPage == page else { return }
                 dm.mode = mode
             }
         }

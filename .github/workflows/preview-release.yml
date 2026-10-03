@@ -1,0 +1,73 @@
+name: Publish preview DMG
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful CI run for this master commit
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: quadcast-preview-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Require passing CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" > "$RUNNER_TEMP/ci.json"
+          python3 - <<'PY'
+          import json, os
+          run = json.load(open(os.environ['RUNNER_TEMP'] + '/ci.json'))
+          assert run['head_sha'] == os.environ['GITHUB_SHA'], 'CI commit does not match release'
+          assert run['head_branch'] == 'master', 'Expected master branch'
+          assert run['path'] == '.github/workflows/ci.yml', 'Expected CI workflow'
+          assert run['conclusion'] == 'success', 'CI must pass before release'
+          PY
+          VERSION=$(python3 scripts/version.py)
+          echo "PREVIEW_TAG=v${VERSION}-beta.1" >> "$GITHUB_ENV"
+          echo "PREVIEW_DMG=QuadcastRGB2S-${VERSION}-AppleSilicon-preview.dmg" >> "$GITHUB_ENV"
+      - name: Download tested CI DMG
+        uses: actions/download-artifact@v8
+        with:
+          name: QuadcastRGB2S-AppleSilicon-preview
+          path: dist/preview
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+      - name: Publish clearly labeled development prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f dist/preview/QuadcastRGB2S-preview.dmg
+          mv dist/preview/QuadcastRGB2S-preview.dmg "dist/preview/$PREVIEW_DMG"
+          (cd dist/preview && sha256sum "$PREVIEW_DMG" > SHA256SUMS.txt)
+          cat > "$RUNNER_TEMP/preview-notes.md" <<'NOTES'
+          Development preview for Apple Silicon on macOS 26 or later. The DMG is built by CI from the tagged commit, includes hidapi, and requires no Homebrew installation.
+
+          **Ad-hoc signed; not Developer ID signed or Apple notarized. Gatekeeper may block opening this preview.** Signed distribution still requires the repository's signing/notarization secrets.
+
+          Adds an Audio page with device-backed mic volume and macOS mute, opt-in stereo RMS/peak meter, and a five-second stereo record/playback test kept only in memory. Audio capture stops and test audio is discarded when leaving Audio, disconnecting, or quitting. Lighting retains six modes and native Liquid Glass controls.
+
+          Headphone volume, monitor mix and polar-pattern selection are not exposed by the tested QuadCast 2 S firmware/macOS driver; use the microphone's hardware knob. Four pattern explanations are included. The vendor tap-to-mute listener is implemented, but reception on the 2 S still needs verification; initial hardware state is shown as unknown rather than guessed.
+
+          Core and native UI tests passed for this commit. Hardware volume/mute discovery was checked read-only on a connected QuadCast 2 S; real capture/playback and vendor mute reception still need a hardware smoke test with Microphone permission.
+          NOTES
+          gh release create "$PREVIEW_TAG" "dist/preview/$PREVIEW_DMG" dist/preview/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "QuadcastRGB2S ${PREVIEW_TAG#v} — development preview" \
+            --notes-file "$RUNNER_TEMP/preview-notes.md"

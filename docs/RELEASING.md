@@ -59,8 +59,7 @@ Output:
 
 The final DMG only appears after the app and DMG have been accepted, stapled and
 validated, strict signatures pass, and Gatekeeper accepts both. Existing final
-DMGs are never overwritten. Preview packages live under `dist/preview` and are
-not release artifacts.
+DMGs are never overwritten. Preview packages live under `dist/preview` and are clearly labeled development builds.
 
 ## GitHub Actions secrets
 
@@ -108,4 +107,20 @@ final hardware smoke test before publishing.
 If Apple times out, the submission ID/status are preserved. A timeout never
 triggers a new submission automatically. Check that existing ID using
 `notarytool info`/`log` with the same profile before rebuilding or resubmitting.
-There is no final distributable DMG until status is `Accepted`.
+There is no signed distributable DMG until status is `Accepted`.
+
+## Development prereleases
+
+When signing credentials are unavailable, **Publish preview DMG** can publish
+an explicitly labeled ad-hoc development prerelease. It requires a successful
+CI run from the exact current master commit and downloads that run's tested DMG.
+It rejects mismatched commits and failing CI; it does not run notarization.
+
+```sh
+gh workflow run preview-release.yml --repo mscno/QuadcastRGB2S --ref master -f ci_run_id=<passing-run-id>
+```
+
+The tag is `v<version>-beta.1`, and release notes state that the app is not
+Developer ID signed/notarized and may be blocked by Gatekeeper. Bump the app
+version before creating another development prerelease. Publishing is an
+explicit manual action; normal pushes only build preview artifacts.

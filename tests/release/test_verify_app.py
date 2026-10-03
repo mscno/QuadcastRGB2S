@@ -23,11 +23,12 @@ class BundleTests(unittest.TestCase):
         (self.contents / "Frameworks/libhidapi.0.dylib").write_bytes(b"fixture")
         (self.contents / "MacOS/QuadcastRGBApp").write_bytes(b"fixture")
         self.info = dict(CFBundleIdentifier="com.mscno.QuadcastRGBApp", CFBundleShortVersionString="1.0.0",
-                         LSUIElement=True, LSMinimumSystemVersion="26.0", CFBundleExecutable="QuadcastRGBApp")
+                         LSUIElement=True, LSMinimumSystemVersion="26.0", CFBundleExecutable="QuadcastRGBApp", NSMicrophoneUsageDescription="Opt-in microphone test")
         self.write_info()
         self.arch = "arm64"
         self.dependency = "@rpath/libhidapi.0.dylib"
         self.load_commands = ""
+        self.entitlements = {"com.apple.security.device.audio-input": True}
 
     def write_info(self):
         (self.contents / "Info.plist").write_bytes(plistlib.dumps(self.info))
@@ -39,6 +40,8 @@ class BundleTests(unittest.TestCase):
             return "fixture:\n\t" + self.dependency + " (compatibility version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n"
         if args[0] == "otool":
             return self.load_commands
+        if args[0] == "codesign" and args[1] == "-d":
+            return "Executable=/fixture/app\n" + plistlib.dumps(self.entitlements).decode()
         return ""
 
     def verify(self):
@@ -72,4 +75,15 @@ class BundleTests(unittest.TestCase):
         self.info["CFBundleIdentifier"] = "another.app"
         self.write_info()
         with self.assertRaisesRegex(ValueError, "identifier"):
+            self.verify()
+
+    def test_missing_microphone_usage_is_rejected(self):
+        self.info.pop("NSMicrophoneUsageDescription")
+        self.write_info()
+        with self.assertRaisesRegex(ValueError, "microphone usage"):
+            self.verify()
+
+    def test_missing_audio_input_entitlement_is_rejected(self):
+        self.entitlements = {}
+        with self.assertRaisesRegex(ValueError, "audio input entitlement"):
             self.verify()

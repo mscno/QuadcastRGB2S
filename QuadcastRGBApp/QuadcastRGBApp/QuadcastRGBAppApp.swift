@@ -5,6 +5,7 @@ import ServiceManagement
 struct QuadcastRGBApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var deviceManager = DeviceManager.shared
+    @StateObject private var audioManager = AudioManager.shared
     var body: some Scene {
         MenuBarExtra {
             MenuBarMenu()
@@ -17,6 +18,7 @@ struct QuadcastRGBApp: App {
         Window("QuadCast RGB", id: "settings") {
             SettingsWindowContent()
                 .environmentObject(deviceManager)
+                .environmentObject(audioManager)
                 .onAppear {
                     NSApp.activate(ignoringOtherApps: true)
                 }
@@ -120,5 +122,6 @@ struct MenuBarMenu: View {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         DeviceManager.shared.stop()
+        AudioManager.shared.shutdown()
     }
 }

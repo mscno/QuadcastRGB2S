@@ -23,6 +23,7 @@ def verify(app):
     require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", info["CFBundleShortVersionString"]), "Invalid version")
     require(info["LSUIElement"] is True, "Expected menu bar application")
     require(info["LSMinimumSystemVersion"] == "26.0", "Expected macOS 26 minimum")
+    require(bool(info.get("NSMicrophoneUsageDescription")), "Missing microphone usage description")
     binary = contents / "MacOS" / info["CFBundleExecutable"]
     library = contents / "Frameworks/libhidapi.0.dylib"
     require(library.is_file() and not library.is_symlink(), "Missing embedded hidapi")
@@ -36,6 +37,12 @@ def verify(app):
         require("/opt/homebrew" not in output("otool", "-l", str(file)), "Homebrew load path remains")
         require("/usr/local" not in output("otool", "-l", str(file)), "Local load path remains")
     output("codesign", "--verify", "--deep", "--strict", str(app))
+    signature = output("codesign", "-d", "--entitlements", "-", "--xml", str(app))
+    start = signature.find("<?xml")
+    require(start >= 0, "Missing signed entitlements")
+    end = signature.find("</plist>", start) + len("</plist>")
+    entitlements = plistlib.loads(signature[start:end].encode())
+    require(entitlements.get("com.apple.security.device.audio-input") is True, "Missing audio input entitlement")
     return binary
 
 
